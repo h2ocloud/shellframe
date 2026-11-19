@@ -213,18 +213,22 @@ class Personnel(oo.OfficeObject):
             en, zh = TASK_WORDS.get(t.get("status"), (str(t.get("status") or ""), str(t.get("status") or "")))
             tag = ctx.t(en, zh)
             links.append({"label": f"#{t.get('id')} {t.get('title') or ''} · {tag}", "view": "board", "task": t.get("id"),
-                          "note": ctx.t("whiteboard", "白板")})
-        lines.append(ctx.t("Click one below to see its card on the whiteboard.", "點下面的一項，到白板看那張卡。") if mine
+                          "note": ctx.t("whiteboard", "白板"), "section": "tasks"})
+        lines.append(ctx.t("Click one to see its card on the whiteboard.", "點一項，到白板看那張卡。") if mine
                      else ctx.t("None.", "沒有。"))
+        if mine:
+            lines += ["", "{{links:tasks}}"]          # the popup draws this section's links here, under its own heading
         lines.append("")
         sched = [s for s in (ctx.schedules() or []) if str(s.get("owner") or "") in names]
         lines.append(f"## {ctx.t('Schedules it owns', '負責的排程')} · {len(sched)}")
         for s in sched[:12]:
             when = s.get("when") if isinstance(s.get("when"), dict) else {"en": s.get("when") or "", "zh": s.get("when") or ""}
             links.append({"label": f"{s.get('title') or s.get('id')} · {oo.loc(when, ctx.lang)}", "view": "cal",
-                          "note": ctx.t("calendar", "日曆")})
-        lines.append(ctx.t("Click one below to see it on the calendar.", "點下面的一項，到日曆看。") if sched
+                          "note": ctx.t("calendar", "日曆"), "section": "schedules"})
+        lines.append(ctx.t("Click one to see it on the calendar.", "點一項，到日曆看。") if sched
                      else ctx.t("None.", "沒有。"))
+        if sched:
+            lines += ["", "{{links:schedules}}"]
         lines.append("")
         if not ext:
             n_mem = 1 if bots.memory_file(role).is_file() else 0
@@ -232,7 +236,8 @@ class Personnel(oo.OfficeObject):
             lines.append(f"## {ctx.t('Its files', '它的檔案')}")
             lines.append(ctx.t(f"{n_mem} memory · {n_skill} own skills", f"{n_mem} 份記憶 · {n_skill} 個自己的技能"))
             links.append({"label": ctx.t("Bookshelf", "書櫃") + " / " + label, "object": "bookshelf",
-                          "filters": {"owner": role}, "note": ctx.t("shelf", "書櫃")})
+                          "filters": {"owner": role}, "note": ctx.t("shelf", "書櫃"), "section": "files"})
+            lines += ["", "{{links:files}}"]
         return {"title": label, "subtitle": ctx.t("Personnel file", "人事檔案"), "markdown": "\n".join(lines),
                 "chips": chips, "links": links, "actions": ["edit_duty"], "owner": label,
                 "owner_key": "" if ext else f"b:{role}"}

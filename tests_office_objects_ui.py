@@ -393,6 +393,13 @@ def run(browser, base, engine):
     check("the engineer's file: duty, open tasks (by label and by role), the schedule it owns, how much it keeps",
           "寫程式、跑測試" in view and "#31" in view and "#14" in view and "示範每日備份" in view and "每天 02:30" in view and "1 份記憶" in view, view[:500])
     check("its only action is 編輯執掌", fr.evaluate("[...document.querySelectorAll('#ooActs button')].map(b => b.textContent)") == ["編輯執掌"])
+    # reviewed: each heading has its own items right under it, not all of them after the last section
+    order = fr.evaluate("""[...document.querySelectorAll('#ooView .oo-md :is(h1,h2,h3,h4,h5,h6,.cm-h), #ooView .oo-md .oo-link, #ooView .oo-links:not(.oo-links-in) .oo-link')]
+        .map(e => (/^H[1-6]$/.test(e.tagName) || e.classList.contains('cm-h')) ? 'H:' + e.textContent.split(' ·')[0] : 'L:' + e.textContent.split(' ')[0])""")
+    want = ["H:執掌", "H:手上任務", "L:#31", "L:#14", "H:負責的排程", "L:示範每日備份", "H:它的檔案", "L:書櫃"]
+    check("under 手上任務 its tasks, under 負責的排程 its schedule, under 它的檔案 the bookshelf link; nothing left at the end",
+          order == want and not fr.evaluate("!!document.querySelector('#ooView .oo-links:not(.oo-links-in)')"), order)
+    check("no {{links:…}} marker shows", "{{links" not in fr.evaluate("document.getElementById('ooView').innerText"))
     if shoot:
         page.screenshot(path=str(SHOTS / "office-objects-personnel-file-1280.png"))
     fr.click('#ooView .oo-link:has-text("#31")')

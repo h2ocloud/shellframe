@@ -310,11 +310,21 @@
       if (!it) { V.innerHTML = `<div class="oo-view-in"><div class="oo-hint">${esc(T('Pick something on the left to read it.', '從左邊挑一項來看。'))}</div></div>`; return; }
       const chips = (it.chips || []).map(c => `<span class="oo-chip ${esc(c.tone || '')}">${esc(c.text)}</span>`).join('');
       const meta = (it.meta || []).map(m => `<span><i>${esc(m[0])}</i> ${esc(m[1])}</span>`).join('');
-      const links = (it.links || []).map((l, n) => `<button type="button" class="oo-link${l.tone ? ' ' + esc(l.tone) : ''}" data-link="${n}"><span>${esc(l.label)}</span>${l.note ? `<em>${esc(l.note)} ›</em>` : '<em>›</em>'}</button>`).join('');
+      const linkHtml = (l, n) => `<button type="button" class="oo-link${l.tone ? ' ' + esc(l.tone) : ''}" data-link="${n}"><span>${esc(l.label)}</span>${l.note ? `<em>${esc(l.note)} ›</em>` : '<em>›</em>'}</button>`;
+      // A link with a `section` goes where the markdown has a line {{links:<section>}} (under its own heading); the others,
+      // and any whose marker is missing, at the end. data-link stays the index into it.links.
+      const placed = new Set();
+      let body = md(it.markdown).replace(/<p>\s*\{\{links:([a-z0-9_-]{1,40})\}\}\s*<\/p>/g, (m, sec) => {
+        const here = (it.links || []).map((l, n) => [l, n]).filter(([l]) => l.section === sec);
+        here.forEach(([, n]) => placed.add(n));
+        return here.length ? `<div class="oo-links oo-links-in">${here.map(([l, n]) => linkHtml(l, n)).join('')}</div>` : '';
+      });
+      body = body.replace(/\{\{links:[a-z0-9_-]{1,40}\}\}/g, '');    // a marker the renderer did not put on a line of its own
+      const links = (it.links || []).map((l, n) => (placed.has(n) ? '' : linkHtml(l, n))).join('');
       V.innerHTML = '<div class="oo-view-in">' +
         `<h3>${esc(it.title)}</h3>${it.subtitle ? `<p class="oo-sub">${esc(it.subtitle)}</p>` : ''}` +
         (chips ? `<div class="oo-chips">${chips}</div>` : '') + (meta ? `<div class="oo-meta">${meta}</div>` : '') +
-        `<div class="oo-md">${md(it.markdown)}</div>` +
+        `<div class="oo-md">${body}</div>` +
         (it.note ? `<p class="oo-fine">${esc(it.note)}</p>` : '') +
         (links ? `<div class="oo-links">${links}</div>` : '') + '</div>';
       V.scrollTop = 0;

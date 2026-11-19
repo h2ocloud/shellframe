@@ -246,6 +246,8 @@ def clean_link(raw):
         return None
     if raw.get("note"):
         out["note"] = _name(raw["note"], 80)
+    if raw.get("section") and _ID.fullmatch(str(raw["section"])):
+        out["section"] = str(raw["section"])        # drawn where the markdown says {{links:<section>}}; else at the end
     if raw.get("tone") in TONES:
         out["tone"] = raw["tone"]
     return out

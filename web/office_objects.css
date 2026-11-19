@@ -78,6 +78,7 @@ body.embedded .oo-veil{padding-top:58px}   /* the app's own ✕ (top right, over
 .oo-plain{white-space:pre-wrap;font:12.5px var(--mono)}
 .oo-fine{margin-top:12px;font-size:11.5px;color:var(--mute)}
 .oo-links{display:flex;flex-direction:column;gap:6px;margin-top:14px}
+.oo-md .oo-links-in{margin:8px 0 6px}
 .oo-link{display:flex;align-items:center;gap:10px;justify-content:space-between;text-align:left;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:rgba(26,27,38,.6);font-size:13px;min-width:0}
 .oo-link span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .oo-link em{font-style:normal;font-size:11.5px;color:var(--dim);flex:none}
