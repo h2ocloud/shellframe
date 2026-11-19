@@ -391,6 +391,8 @@
     font-size: 11px; color: #1a1b26; background: #e0af68; padding: 2px 10px;
     border-radius: 4px; cursor: pointer; -webkit-app-region: no-drag;
     margin-right: 6px; font-weight: 500; transition: opacity .2s;
+    /* one line at its own width: in a crowded tab bar the tabs give way, not this (it was squeezed into a column) */
+    white-space: nowrap; flex-shrink: 0; align-self: center; line-height: 18px;
   }
   .update-banner:hover { opacity: .85; }
   .release-notes {
