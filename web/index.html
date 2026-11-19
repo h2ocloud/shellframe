@@ -1045,16 +1045,16 @@
     <div class="settings-tab-panel" id="settings-panel-bots">
       <div class="sx-card sx-groups" id="sx-groups">
         <div class="sx-row">
-          <div class="sx-txt"><div class="sx-label">角色群組 — 一則訊息送給多個角色（實驗性）</div>
-            <div class="sx-hint">把名冊裡的角色組成群，一次送給全部成員，回覆合併成一條對話。手機 App 與 TG <code>/group</code> 都可用。預設關閉。</div></div>
+          <div class="sx-txt"><div class="sx-label" data-i18n="groupsTitle">角色群組 — 一則訊息送給多個角色（實驗性）</div>
+            <div class="sx-hint" data-i18n="groupsHint">把名冊裡的角色組成群，一次送給全部成員，回覆合併成一條對話。手機 App 與 TG <code>/group</code> 都可用。預設關閉。</div></div>
           <div class="sx-ctl"><button class="toggle-switch" id="setting-experimental-groups" data-guide="groups"></button></div>
         </div>
         <div id="groups-editor" class="sx-sub" style="display:none">
           <div id="groups-list"></div>
           <div class="sx-addgroup">
-            <input type="text" id="group-new-name" class="sx-input" placeholder="群組名稱"/>
+            <input type="text" id="group-new-name" class="sx-input" data-i18n-placeholder="groupName" placeholder="群組名稱"/>
             <div id="group-role-picks"></div>
-            <button class="btn btn-primary" id="group-save">新增／更新</button>
+            <button class="btn btn-primary" id="group-save" data-i18n="groupSave">新增／更新</button>
           </div>
           <div id="group-msg" class="sx-msg"></div>
         </div>
@@ -1110,13 +1110,13 @@
       </div>
 
       <!-- STT (voice transcription) -->
-      <div class="sx-h"><span><i data-sfi="mic" class="sx-h-ico"></i> 語音轉錄 (STT)</span><span id="stt-status-pill" class="sx-pill"></span></div>
+      <div class="sx-h"><span><i data-sfi="mic" class="sx-h-ico"></i> <span data-i18n="sttTitle">語音轉錄 (STT)</span></span><span id="stt-status-pill" class="sx-pill"></span></div>
       <div class="sx-card">
         <div class="sx-row sx-field">
           <div class="sx-txt"><label class="sx-label" for="stt-backend">Backend</label></div>
           <div class="sx-ctl">
             <select id="stt-backend" class="sx-input">
-              <option value="auto">Auto (plugin → 本地 → 遠端)</option>
+              <option value="auto" data-i18n="sttBackendAuto">Auto (plugin → 本地 → 遠端)</option>
               <option value="plugin">Plugin only</option>
               <option value="local">Local (whisper.cpp)</option>
               <option value="remote">Remote chain only</option>
@@ -1146,9 +1146,9 @@
           <div class="sx-ctl"><button class="toggle-switch" id="setting-voice-apply-gate"></button></div>
         </div>
         <div class="sx-row sx-actions">
-          <button class="btn btn-ghost" id="btn-stt-refresh"><i data-sfi="refresh"></i> 檢查</button>
-          <button class="btn btn-ghost" id="btn-stt-install">安裝本地 STT</button>
-          <button class="btn btn-primary" id="btn-stt-save">儲存</button>
+          <button class="btn btn-ghost" id="btn-stt-refresh"><i data-sfi="refresh"></i> <span data-i18n="sttRefresh">檢查</span></button>
+          <button class="btn btn-ghost" id="btn-stt-install" data-i18n="sttInstall">安裝本地 STT</button>
+          <button class="btn btn-primary" id="btn-stt-save" data-i18n="sttSave">儲存</button>
         </div>
       </div>
       <div class="sx-note">
@@ -1361,25 +1361,21 @@
     </div>
 
     <div class="about-section" id="about-skill-section">
-      <h3>給 AI 的使用說明（Skill）</h3>
-      <p>把這份說明貼給任何 AI，它就知道怎麼操作 ShellBot：讀其他分頁、派工、
-      角色群組，以及<b>跨機器操控另一台電腦的 session</b>。裡面要求 AI 先自己查版本，
-      再對照功能表，避免它用到這個版本還沒有的指令。</p>
-      <p style="color:#9aa5ce">分頁裡的 AI 其實不用等你貼：讓它自己跑
-      <code>sfctl skill</code>，印出來的就是這台機器實際安裝的版本，開頭會標明版本
-      與哪些實驗性功能是開著的。</p>
+      <h3 data-i18n="skillTitle">給 AI 的使用說明（Skill）</h3>
+      <p data-i18n="skillIntro">把這份說明貼給任何 AI，它就知道怎麼操作 ShellBot：讀其他分頁、派工、角色群組，以及<b>跨機器操控另一台電腦的 session</b>。裡面要求 AI 先自己查版本，再對照功能表，避免它用到這個版本還沒有的指令。</p>
+      <p style="color:#9aa5ce" data-i18n="skillGuideNote">分頁裡的 AI 其實不用等你貼：讓它自己跑 <code>sfctl skill</code>，印出來的就是這台機器實際安裝的版本，開頭會標明版本與哪些實驗性功能是開著的。</p>
       <div id="skill-install" style="margin-top:8px;padding:8px 10px;background:#1a1b26;border:1px solid #3b4261;border-radius:6px">
-        <div style="font-size:11px;color:#a9b1d6;margin-bottom:6px">讓 AI 預設就會用</div>
-        <div id="skill-install-status" style="font-size:11px;color:#565f89;line-height:1.7">讀取中…</div>
+        <div style="font-size:11px;color:#a9b1d6;margin-bottom:6px" data-i18n="skillDefault">讓 AI 預設就會用</div>
+        <div id="skill-install-status" style="font-size:11px;color:#565f89;line-height:1.7" data-i18n="skillLoading">讀取中…</div>
         <div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap">
-          <button class="btn btn-ghost" id="btn-install-claude" style="font-size:11px;padding:4px 10px">重新寫入 Claude Code</button>
-          <button class="btn btn-ghost" id="btn-install-codex" style="font-size:11px;padding:4px 10px">寫入 Codex AGENTS.md</button>
+          <button class="btn btn-ghost" id="btn-install-claude" style="font-size:11px;padding:4px 10px" data-i18n="skillRewriteClaude">重新寫入 Claude Code</button>
+          <button class="btn btn-ghost" id="btn-install-codex" style="font-size:11px;padding:4px 10px" data-i18n="skillWriteCodex">寫入 Codex AGENTS.md</button>
           <span id="skill-install-msg" style="font-size:11px;color:#9ece6a"></span>
         </div>
       </div>
       <div style="display:flex;gap:6px;margin-top:8px;align-items:center">
-        <button class="btn btn-primary" id="btn-copy-skill" style="font-size:11px;padding:4px 10px">複製給 AI</button>
-        <button class="btn btn-ghost" id="btn-open-skill" style="font-size:11px;padding:4px 10px">看內容</button>
+        <button class="btn btn-primary" id="btn-copy-skill" style="font-size:11px;padding:4px 10px" data-i18n="skillCopy">複製給 AI</button>
+        <button class="btn btn-ghost" id="btn-open-skill" style="font-size:11px;padding:4px 10px" data-i18n="skillView">看內容</button>
         <span id="skill-copy-msg" style="font-size:11px;color:#9ece6a"></span>
       </div>
       <pre id="skill-preview" style="display:none;white-space:pre-wrap;max-height:260px;overflow:auto;background:#1a1b26;border:1px solid #3b4261;border-radius:6px;padding:10px;margin-top:8px;font-size:10px;line-height:1.5;color:#a9b1d6"></pre>
@@ -1498,6 +1494,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 <!-- 配對 QR（手機 App 掃這個；同一串也是 shellframe:// 深連結）。載不到時退回純文字配對碼。 -->
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="icons.js"></script>
+<script src="i18n.js"></script>
 <script src="dialog.js"></script>
 <script src="quiet.js"></script>
 <script src="bots.js"></script>
@@ -1855,6 +1852,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       releaseNotesGotIt: '知道了',
     }
   };
+
+  Object.assign(I18N.en, window.SF_I18N.en); Object.assign(I18N['zh-TW'], window.SF_I18N['zh-TW']);
 
   // Default language: detect from OS locale. Chinese → zh-TW, everything else → en.
   let lang = /^zh\b/i.test(navigator.language) ? 'zh-TW' : 'en';
@@ -7214,7 +7213,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (!listEl) return;
     let res;
     try { res = JSON.parse(await pywebview.api.sfctl_call('group_list', '{}')); }
-    catch (e) { listEl.textContent = '讀不到群組：' + e; return; }
+    catch (e) { listEl.textContent = t('groupReadFailed') + e; return; }
     const det = (res && res.details) || {};
     const groups = det.groups || [];
     _groupRoles = det.roles || [];
@@ -7223,13 +7222,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
            <span style="color:#7aa2f7">${esc2(g.name)}</span>
            <span style="color:#565f89">${esc2((g.roles || []).join('、'))}</span>
            <button class="btn btn-ghost" data-group-del="${esc2(g.name)}"
-             style="font-size:10px;padding:1px 6px;margin-left:auto">刪除</button>
+             style="font-size:10px;padding:1px 6px;margin-left:auto">${t('groupDelete')}</button>
          </div>`).join('')
-      : '<div style="color:#565f89">還沒有群組。取個名字、勾選角色，按「新增／更新」。</div>';
+      : `<div style="color:#565f89">${t('groupEmpty')}</div>`;
     picks.innerHTML = _groupRoles.map(r =>
       `<label style="font-size:11px;color:#a9b1d6;display:flex;align-items:center;gap:3px">
          <input type="checkbox" value="${esc2(r)}" class="group-role-cb"/>${esc2(r)}</label>`).join('')
-      || '<span style="font-size:11px;color:#f7768e">名冊裡還沒有角色</span>';
+      || `<span style="font-size:11px;color:#f7768e">${t('groupNoRoles')}</span>`;
     listEl.querySelectorAll('[data-group-del]').forEach(b => {
       b.addEventListener('click', async () => {
         await pywebview.api.sfctl_call('group_delete',
@@ -7619,7 +7618,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       lines.push(`<div>Plugin: ${pluginOk ? '✓ ' + plugin.path : '✗ (no ' + plugin.path + ')'}</div>`);
       lines.push(`<div>Local: ${localOk ? '✓ ' + (local.binary ? local.binary.split('/').pop() : '') : '✗ not installed'}</div>`);
       if (local.binary && !local.model) {
-        lines.push(`<div style="color:#e0af68">  ⚠ binary 已裝但缺少模型 — 點「安裝本地 STT」會自動下載</div>`);
+        lines.push(`<div style="color:#e0af68">${t('sttModelMissing')}</div>`);
       }
       const eps = remote.endpoints || [];
       if (eps.length === 0) {
@@ -7650,8 +7649,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         providers = JSON.parse(providersStr);
         if (!Array.isArray(providers)) throw new Error('must be a JSON array');
       } catch(e) {
-        btn.textContent = 'JSON 錯誤';
-        setTimeout(() => { btn.textContent = '儲存'; }, 1500);
+        btn.textContent = t('sttJsonError');
+        setTimeout(() => { btn.textContent = t('sttSave'); }, 1500);
         return;
       }
     }
@@ -7660,23 +7659,23 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     try {
       await pywebview.api.stt_save_settings(backend, JSON.stringify(providers));
       btn.textContent = '✓';
-      setTimeout(() => { btn.textContent = '儲存'; btn.disabled = false; }, 800);
+      setTimeout(() => { btn.textContent = t('sttSave'); btn.disabled = false; }, 800);
       syncSttPanel();
     } catch(e) {
-      btn.textContent = '失敗';
-      setTimeout(() => { btn.textContent = '儲存'; btn.disabled = false; }, 1500);
+      btn.textContent = t('sttFailed');
+      setTimeout(() => { btn.textContent = t('sttSave'); btn.disabled = false; }, 1500);
     }
   });
 
   document.getElementById('btn-stt-install').addEventListener('click', async () => {
     const btn = document.getElementById('btn-stt-install');
     btn.disabled = true;
-    btn.textContent = '安裝中… (可能要幾分鐘)';
+    btn.textContent = t('sttInstalling');
     try {
       const raw = await pywebview.api.stt_install_local();
       const result = JSON.parse(raw);
       if (result.success) {
-        btn.textContent = '✓ 已安裝';
+        btn.textContent = t('sttInstalled');
         syncSttPanel();
       } else {
         btn.textContent = '✗ ' + (result.message || 'failed').substring(0, 30);
@@ -7684,7 +7683,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     } catch(e) {
       btn.textContent = '✗ Error';
     }
-    setTimeout(() => { btn.textContent = '安裝本地 STT'; btn.disabled = false; }, 3000);
+    setTimeout(() => { btn.textContent = t('sttInstall'); btn.disabled = false; }, 3000);
   });
 
   // ── 語音輸入（麥克風 fab：後端 ffmpeg 錄音 → STT → 注入當前分頁）──
@@ -8790,23 +8789,23 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   document.getElementById('btn-copy-skill').addEventListener('click', async () => {
     const msg = document.getElementById('skill-copy-msg');
     const text = await loadSkillDoc();
-    if (!text) { msg.style.color = '#f7768e'; msg.textContent = '讀不到說明檔'; return; }
+    if (!text) { msg.style.color = '#f7768e'; msg.textContent = t('skillReadFailed'); return; }
     try {
       await navigator.clipboard.writeText(text);
       msg.style.color = '#9ece6a';
-      msg.textContent = '已複製 ' + text.length + ' 字，貼給 AI 即可';
+      msg.textContent = t('skillCopied').replace('{n}', text.length);
     } catch (e) {
       // Clipboard can be refused in the webview; show it so it can be copied by hand.
       const pre = document.getElementById('skill-preview');
       pre.textContent = text; pre.style.display = 'block';
-      msg.style.color = '#e0af68'; msg.textContent = '無法自動複製，內容如下';
+      msg.style.color = '#e0af68'; msg.textContent = t('skillCopyFailed');
     }
     setTimeout(() => { msg.textContent = ''; }, 6000);
   });
   document.getElementById('btn-open-skill').addEventListener('click', async () => {
     const pre = document.getElementById('skill-preview');
     if (pre.style.display === 'block') { pre.style.display = 'none'; return; }
-    pre.textContent = (await loadSkillDoc()) || '讀不到 docs/ai-skill.md';
+    pre.textContent = (await loadSkillDoc()) || t('skillDocMissing');
     pre.style.display = 'block';
   });
 
@@ -8821,26 +8820,26 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const r = JSON.parse(await pywebview.api.ai_skill_status());
       d = r.success ? r.details : null;
     } catch (e) { d = null; }
-    if (!d) { el.textContent = '讀不到安裝狀態'; return; }
+    if (!d) { el.textContent = t('skillStatusReadFailed'); return; }
     const mark = ok => ok ? '<span style="color:#9ece6a">✓</span>' : '<span style="color:#e0af68">—</span>';
     const rows = [
-      `${mark(d.claude)} Claude Code：${d.claude ? '已裝，新分頁自己會讀到' : '未安裝'} <code style="font-size:10px">${d.claude_path}</code>`,
+      `${mark(d.claude)} ${t('skillClaudeLabel')}${d.claude ? t('skillInstalled') : t('skillNotInstalled')} <code style="font-size:10px">${d.claude_path}</code>`,
       d.codex_available
-        ? `${mark(d.codex)} Codex：${d.codex ? '已寫入標記區塊' : '未寫入'} <code style="font-size:10px">${d.codex_path}</code>`
-        : `${mark(false)} Codex：這台機器沒有 ~/.codex`,
-      `<span style="color:#565f89">AI 要跑的指令：<code style="font-size:10px">${d.sfctl} skill</code></span>`,
+        ? `${mark(d.codex)} ${t('skillCodexLabel')}${d.codex ? t('skillMarkerWritten') : t('skillNotWritten')} <code style="font-size:10px">${d.codex_path}</code>`
+        : `${mark(false)} ${t('skillCodexLabel')}${t('skillNoCodex')}`,
+      `<span style="color:#565f89">${t('skillAiCommand')}<code style="font-size:10px">${d.sfctl} skill</code></span>`,
     ];
     el.innerHTML = rows.join('<br>');
     const cx = document.getElementById('btn-install-codex');
     if (cx) {
       cx.disabled = !d.codex_available;
-      cx.textContent = d.codex ? '從 Codex AGENTS.md 移除' : '寫入 Codex AGENTS.md';
+      cx.textContent = t(d.codex ? 'skillRemoveCodex' : 'skillWriteCodex');
       cx.dataset.remove = d.codex ? '1' : '';
     }
   }
   async function runSkillInstall(target, remove) {
     const msg = document.getElementById('skill-install-msg');
-    msg.style.color = '#565f89'; msg.textContent = '處理中…';
+    msg.style.color = '#565f89'; msg.textContent = t('skillWorking');
     try {
       const r = JSON.parse(await pywebview.api.ai_skill_install(target, !!remove));
       msg.style.color = r.success ? '#9ece6a' : '#f7768e';

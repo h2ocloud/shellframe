@@ -13,7 +13,7 @@ boundary moves. Gotchas and release mechanics live in
 ## 1. Shape of the system
 
 ```
- web/index.html (xterm.js, one IIFE)         external ingress
+ web/index.html (xterm.js, one IIFE; strings in web/i18n.js) external ingress
         │  pywebview js_api (one thread per call)   ├─ Telegram / LINE bridges
         ▼                                           ├─ sfctl CLI (command files)
  ┌───────────────────── Api ──────────────────┐     ├─ local HTTP API (api_server)
