@@ -49,7 +49,8 @@
 ### Added
 
 - **The office's bookshelf and personnel cabinet.**
-  Two pieces of furniture on the lobby wall, also reachable from 「書櫃」 and 「人事」 in the office's tool bar. They open
+  The lobby's bookshelf (the one by the sofa) can now be clicked, and a personnel cabinet stands behind the secretary;
+  both are also reachable from 「書櫃」 and 「人事」 in the office's tool bar. They open
   one shared popup: a list you can search and filter, a preview, and actions.
   - The bookshelf holds each bot's memory, its skills (SKILL.md and the Markdown files it links to) and its session
     summaries. Its red number is how many bots have a memory over 80% full.
@@ -57,21 +58,23 @@
     it owns. External bots and bots on a local model are labelled, and each section lists its own items.
   - Both are read only. 「用編輯器打開」 opens the file, 「請 X 更新」 sends that bot one line, and 「編輯執掌」 opens its
     settings. Anything that looks like a secret is masked before it reaches the page.
-  - They stand against the back wall where nothing else is: the bookshelf between the counter and the secretary's
-    rug, the cabinet behind the secretary. `tests_office_furniture_ui.py` checks that no two pieces of the lobby's
-    furniture share floor or cover the whiteboard or the calendar, for anything added later too.
+  - The bookshelf is the one the lobby already had, not a second one; its red number sits on it. The cabinet stands
+    against the back wall where nothing else is, and the wall between the counter and the secretary's rug stays open.
+    `tests_office_furniture_ui.py` checks that no two pieces of the lobby's furniture share floor or cover the
+    whiteboard or the calendar, for anything added later too.
   Plugins can add their own office objects the same way (`docs/architecture.md` §7). Covered by
   `tests_office_objects.py`, `tests_office_shelf.py` and `tests_office_objects_ui.py`.
 
-  **辦公室的書櫃和人事檔案櫃。** 大廳牆邊多兩件家具，也可以從辦公室工具列的「書櫃」「人事」打開。兩者共用一個彈出視窗：可以搜尋、篩選
+  **辦公室的書櫃和人事檔案櫃。** 大廳沙發旁原本那座書櫃現在可以點，秘書長背後多一座人事檔案櫃；也可以從辦公室工具列的「書櫃」
+  「人事」打開。兩者共用一個彈出視窗：可以搜尋、篩選
   的清單，旁邊是預覽，下面是動作鈕。
   - 書櫃收著每個 bot 的記憶、技能（SKILL.md 和它連到的 Markdown）和對話摘要。紅色數字是記憶超過八成的 bot 數。
   - 人事檔案櫃是每個 bot 一份檔案：執掌、CLI 和模型、醒著或休息、手上任務、負責的排程。外部的和跑地端模型的 bot 會標出來，每一段
     底下直接列它自己的項目。
   - 兩者都只看不改：「用編輯器打開」打開檔案，「請 X 更新」傳一行給那個 bot，「編輯執掌」打開它的設定。看起來像金鑰的字在送到畫面前就
     遮掉。
-  - 兩件都靠後牆、擺在空的地方：書櫃在小桌和秘書長地毯之間，檔案櫃在秘書長背後。`tests_office_furniture_ui.py` 檢查大廳裡任兩件
-    家具不共用地板、不擋住白板和行事曆，之後再加的家具也一樣。
+  - 書櫃就是大廳原本那座，不另外多擺一座，紅色數字掛在它身上。檔案櫃靠後牆擺在空的地方，小桌和秘書長地毯之間的牆面保持空著。
+    `tests_office_furniture_ui.py` 檢查大廳裡任兩件家具不共用地板、不擋住白板和行事曆，之後再加的家具也一樣。
   外掛可以用同一套方式加自己的辦公室物件（`docs/architecture.md` 第 7 節）。由 `tests_office_objects.py`、`tests_office_shelf.py`、
   `tests_office_objects_ui.py` 守著。
 

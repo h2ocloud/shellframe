@@ -1380,8 +1380,11 @@ function drawDecor(x, d) {
     for (let i = 0; i < 5; i++) { const z = 8 + i * 8.5, on = RM ? 1 : (Math.sin(T * (2 + i * .7) + i) > -.2); poly(x, wq(d.x, d.y + d.h, d.x + d.w, d.y + d.h, .15, .85, z, z + 4.5), '#0f1018'); const lp = P(d.x + .12 + (i % 2) * .08, d.y + d.h, z + 2.2); ellipse(x, lp.x, lp.y, 1.2, 1.2, on ? COL.teal : '#2a3b3a'); }
   }
 }
+// The lobby's bookshelf on the left wall, by the sofa: it is also the 書櫃 object (OBJ fixtures below: its red number,
+// its outline, its click), not a second bookshelf beside it (reviewed: there were two).
+const LOBBY_SHELF = { x: .2, y: .6, w: .5, h: 1.7, kind: 'shelf' };
 function decorOf(r) {
-  if (r.kind === 'lobby') return [{ x: .2, y: .6, w: .5, h: 1.7, kind: 'shelf' }, { x: 5.6, y: .3, w: 1.5, h: .7, kind: 'counter' }, { x: 13.25, y: .35, w: .6, h: .6, kind: 'plant', s: 1.15 }, { x: .35, y: 3.3, w: .6, h: .6, kind: 'plant', s: 1 }, { x: 1.4, y: 2.3, w: 1.7, h: .75, kind: 'sofa' }, { x: 13.2, y: M.LH - .95, w: .6, h: .6, kind: 'plant', s: 1.2 }];
+  if (r.kind === 'lobby') return [LOBBY_SHELF, { x: 5.6, y: .3, w: 1.5, h: .7, kind: 'counter' }, { x: 13.25, y: .35, w: .6, h: .6, kind: 'plant', s: 1.15 }, { x: .35, y: 3.3, w: .6, h: .6, kind: 'plant', s: 1 }, { x: 1.4, y: 2.3, w: 1.7, h: .75, kind: 'sofa' }, { x: 13.2, y: M.LH - .95, w: .6, h: .6, kind: 'plant', s: 1.2 }];
   if (r.kind === 'zone') return [{ x: r.x + r.w - .72, y: r.y + .3, w: .55, h: .55, kind: 'plant', s: .9 }];
   if (r.kind === 'peer') return [{ x: r.x + r.w - .75, y: r.y + .5, w: .55, h: 1.2, kind: 'rack' }];
   return [];
@@ -2023,13 +2026,14 @@ M.board = null; M.notes = []; M.boardVer = 0; M.notesAt = 0; M.boardJson = ''; M
 const WALL_OBJ = { board: { name: '任務看板', q: [1.4, 0, 4.9, 0, 0, 1, 28, 60] }, cal: { name: '排程', q: [5.1, 0, 5.9, 0, 0, 1, 38, 64] } };
 // 牆邊的家具（書櫃、人事檔案櫃…）：每件是一個「辦公室物件」（office_objects.py 的宣告＋四個掛鉤），畫法、蓋板（共用的彈出視窗）在 web/office_objects.js；
 // 這裡只接線：牆上的東西是 'obj:<id>'，點到、或按右下角同名的按鈕，開同一種蓋板。標題字、字樣都由主頁（HOST.objects）給，已是這一頁的語言。
-// Where the lobby's objects may stand on the back wall: clear of the counter (5.6–7.1, under the calendar), of the secretary's
-// rug and desk (8.9–12.6, the lamp at its left), and of the plant in the corner (13.25). One between the counter and the rug,
-// one behind the secretary at the right, like a file cabinet behind a desk (reported: the bookshelf stood inside the counter).
-// tests_office_furniture_ui.py checks every lobby footprint against the others, these included.
-const OBJ_SLOTS = [[7.45, 8.65], [11.6, 12.6]];
+// Where the lobby's objects may stand on the back wall: behind the secretary at the right, like a file cabinet behind a desk,
+// clear of the rug's edge and of the plant in the corner (13.25). The stretch between the counter and the rug stays open
+// (reviewed: a piece there crowded the secretary's desk; before that the bookshelf stood inside the counter).
+// The bookshelf is not placed: it is the room's own (LOBBY_SHELF). tests_office_furniture_ui.py checks every lobby footprint.
+const OBJ_SLOTS = [[11.6, 12.6]];
+const OBJ_FIXTURES = [{ furniture: 'bookshelf', x0: LOBBY_SHELF.x, x1: LOBBY_SHELF.x + LOBBY_SHELF.w, y0: LOBBY_SHELF.y, y1: LOBBY_SHELF.y + LOBBY_SHELF.h, h: 48, on: 'decor:shelf@' + LOBBY_SHELF.x }];
 const OBJ = OfficeObjects.create({
-  tr, doc: document, kick: () => kick(), slots: OBJ_SLOTS,
+  tr, doc: document, kick: () => kick(), slots: OBJ_SLOTS, fixtures: OBJ_FIXTURES,
   host: HOST ? { objects: HOST.objects, md: HOST.md } : OfficeObjects.demoHost(tr),
   beforeOpen() { if (view) closeView(true); if (follow) stopFollow(true); hoverObj = null; hoverKey = null; cv.classList.remove('pt'); },
   hasTab: key => !!(HOST && HOST.chat && HOST.chat.has(key)),
@@ -2876,6 +2880,8 @@ function draw() {
     const r = L.room.r; if (!onScreen(roomScreenBox(r))) continue; roomsDrawn++;
     c.globalAlpha = r.alpha; drawRoomShell(c, r, far); c.globalAlpha = 1;
     if (!far) for (const d of decorOf(r)) L.room.items.push([P(d.x + d.w, d.y + d.h).y, () => drawDecor(c, d)]);
+    if (!far && r.kind === 'lobby') L.room.items.push([P(LOBBY_SHELF.x + LOBBY_SHELF.w, LOBBY_SHELF.y + LOBBY_SHELF.h).y + .01,   // the objects that are the room's own pieces: their number and outline, over the piece
+      () => OBJ.draw(c, { P, poly, box, ellipse, wq, COL, FONT, hover: hoverObj, given: true })]);
     L.room.items.sort((a, b) => a[0] - b[0]); for (const it of L.room.items) it[1]();
   }
   for (const r of rings) { const k = r.t / r.max, p = P(r.x, r.y), e = floorR(.3 + .9 * easeOut(k)); ellipse(c, p.x, p.y, e.rx, e.ry, null, alpha(r.color, (1 - k) * .9), 2.2); }
@@ -3599,9 +3605,10 @@ window.__office = {
   lobbyLayout: () => { const r = M.rooms.get('lobby'); const floor = [];
     for (const d of decorOf(r)) floor.push({ id: 'decor:' + d.kind + '@' + d.x, x0: d.x, x1: d.x + d.w, y0: d.y, y1: d.y + d.h, z0: 0, z1: ({ shelf: 48, counter: 40, sofa: 21, plant: 30, rack: 44 })[d.kind] || 30 });   // drawDecor's heights (the counter's machine on top)
     for (const s of M.seats.values()) if (s.room === 'lobby') floor.push({ id: 'seat:' + s.key, x0: s.lx, x1: s.lx + s.w, y0: s.ly, y1: s.ly + s.h, z0: 0, z1: 20 });
-    for (const f of OBJ.footprints()) floor.push(f);
+    const fp = OBJ.footprints(), fixtures = fp.filter(f => f.given);   // an object that is the room's own piece is not new floor
+    for (const f of fp) if (!f.given) floor.push(f);
     const wall = Object.entries(WALL_OBJ).map(([id, o]) => ({ id, x0: o.q[0], x1: o.q[2], z0: o.q[6], z1: o.q[7] }));
-    return { w: r.w, h: r.h, floor, wall, rug: { x0: 8.9, x1: 12.6, y0: .5, y1: 4.25 } }; },
+    return { w: r.w, h: r.h, floor, fixtures, wall, rug: { x0: 8.9, x1: 12.6, y0: .5, y1: 4.25 } }; },
   pause: on => { DEMO.paused = !!on; kick(); }, follow: key => startFollow(key), unfollow: () => stopFollow(), setMode: (m, i) => setMode(m, i), setArea: (id, i) => setArea(id, i),
   forceIdle: () => { lastInput = performance.now() - IDLE_AFTER - 1; goal = null; }, isActive: () => active(), busy: () => busy(), cam: () => ({ ...cam }), lod: () => lodFar ? 'far' : 'near',
   addBots: n => addBots(n), setTemps: n => { while (DB.temps.length < n) { const k = sim.tempN++; DB.temps.push({ id: 'tmp' + k, name: '臨時 #' + k, cli: '示範 CLI-' + 'ABC'[k % 3], state: 'working', opened_at: iso(clockMs() + k), task: { id: '—', title: TEMP_TASKS[k % 5], status: 'doing', next: '做完就關分頁' }, events: [], _lock: 1e9 }); } while (DB.temps.length > n) DB.temps.pop(); push(); },

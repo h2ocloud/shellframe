@@ -57,25 +57,38 @@
     // goes into the first stretch with room left, in declaration order; one that fits nowhere gets no furniture (its
     // toolbar button still opens it).
     const SLOTS = Array.isArray(E.slots) && E.slots.length ? E.slots.map(s => [Number(s[0]), Number(s[1])]) : [[WALL_X0, WALL_X1]];
-    function place() {                                      // id → {x0, x1, kind}
-      const out = {}, next = SLOTS.map(s => s[0]);
+    // Furniture the room already has and draws itself (env.fixtures: {furniture, x0, x1, y0, y1, h, on}): an object of that kind
+    // becomes that piece (its badge, its outline, its click) instead of a second one beside it (reviewed: two bookshelves in one
+    // lobby). One object per fixture, first come.
+    const FIXTURES = Array.isArray(E.fixtures) ? E.fixtures : [];
+    function place() {                                      // id → {x0, x1, y0, y1, k, given}
+      const out = {}, next = SLOTS.map(s => s[0]), used = new Set();
       for (const o of objs) {
-        if (o.place === 'button') continue;                      // no furniture: only the toolbar button (the deliverables' desks are on the people's desks)
+        if (o.place === 'button') continue;
+        const f = FIXTURES.findIndex((x, j) => !used.has(j) && x.furniture === o.furniture);
+        if (f < 0) continue;
+        used.add(f);
+        const x = FIXTURES[f];
+        out[o.id] = { x0: x.x0, x1: x.x1, y0: x.y0, y1: x.y1, k: { w: x.x1 - x.x0, d: x.y1 - x.y0, h: x.h }, given: true, on: x.on || '' };
+      }
+      for (const o of objs) {
+        if (o.place === 'button' || out[o.id]) continue;        // no furniture: only the toolbar button (the deliverables' desks are on the people's desks)
         const k = KINDS[o.furniture] || KINDS.generic;
         const i = SLOTS.findIndex((s, j) => next[j] + k.w <= s[1] + 1e-9);
         if (i < 0) continue;
-        out[o.id] = { x0: next[i], x1: next[i] + k.w, k };
+        out[o.id] = { x0: next[i], x1: next[i] + k.w, y0: 0, y1: k.d, k };
         next[i] += k.w + GAP;
       }
       return out;
     }
     // Each piece's floor rectangle against the back wall (y 0 to its depth) and its height: what the office checks for overlaps.
-    const footprints = () => Object.entries(place()).map(([id, p]) => ({ id: 'obj:' + id, x0: p.x0, x1: p.x1, y0: 0, y1: p.k.d, z0: p.k.z0 || 0, z1: (p.k.z0 || 0) + p.k.h }));
+    // A fixture's footprint is the room's own piece (`on` names it), not new floor.
+    const footprints = () => Object.entries(place()).map(([id, p]) => ({ id: 'obj:' + id, x0: p.x0, x1: p.x1, y0: p.y0, y1: p.y1, z0: p.k.z0 || 0, z1: (p.k.z0 || 0) + p.k.h, given: !!p.given, on: p.on || '' }));
     const keys = () => Object.keys(place()).map(id => 'obj:' + id);
     const wall = k => { const o = find(String(k).slice(4)); return o ? { name: o.title, room: 'lobby' } : null; };
     function corners(p) {
       const out = [];
-      for (const x of [p.x0, p.x1]) for (const y of [0, p.k.d]) for (const z of [p.k.z0 || 0, (p.k.z0 || 0) + p.k.h]) out.push([x, y, z]);
+      for (const x of [p.x0, p.x1]) for (const y of [p.y0, p.y1]) for (const z of [p.k.z0 || 0, (p.k.z0 || 0) + p.k.h]) out.push([x, y, z]);
       return out;
     }
     function hull(k, t2s) {
@@ -88,15 +101,17 @@
       g.x.font = `700 ${n > 9 ? 8 : 9.5}px ${g.FONT}`; g.x.fillStyle = '#fff'; g.x.textAlign = 'center'; g.x.textBaseline = 'middle';
       g.x.fillText(n > 9 ? '9+' : String(n), q.x, q.y + .6);
     };
-    // g: {x (ctx), P, poly, box, ellipse, wq, COL, FONT, alpha, hover (key), active (id)}
+    // g: {x (ctx), P, poly, box, ellipse, wq, COL, FONT, alpha, hover (key), active (id), given (the fixtures' pass)}
     function draw(x, g0) {
       const g = Object.assign({ x }, g0), at = place();
       for (const o of objs) {
         const p = at[o.id];
-        if (!p) continue;
+        if (!p || !!p.given !== !!g.given) continue;            // the room's own pieces are drawn after the room draws them (g.given)
         const k = p.k, w = p.x1 - p.x0, z0 = k.z0 || 0;
         const front = (u1, u2, z1, z2) => g.wq(p.x0, k.d, p.x1, k.d, u1, u2, z0 + z1, z0 + z2);
-        if (o.furniture === 'bookshelf') {
+        if (p.given) {
+          // the room draws this piece itself: only its badge and its outline here
+        } else if (o.furniture === 'bookshelf') {
           g.box(x, p.x0, 0, w, k.d, 0, k.h, { t: '#6a5a86', l: '#4b3f66', r: '#3a3052' }, 'rgba(192,202,245,.14)');
           g.poly(x, front(.06, .94, 3, k.h - 4), '#2e2742');
           for (let r = 0; r < 3; r++) {
@@ -124,7 +139,7 @@
           g.box(x, p.x0, 0, w, k.d, 0, k.h, { t: '#8d98c4', l: '#6f7ba6', r: '#566086' }, 'rgba(255,255,255,.18)');
           g.poly(x, front(.2, .8, k.h * .55, k.h * .7), 'rgba(20,24,40,.4)');
         }
-        if (o.badge > 0) badge(g, p.x1, k.d, z0 + k.h - 1, o.badge);
+        if (o.badge > 0) badge(g, p.x1, p.y1, z0 + k.h - 1, o.badge);
         if (g.hover === 'obj:' + o.id || (S && S.id === o.id)) {
           const on = !!(S && S.id === o.id);
           g.poly(x, hullOf(corners(p).map(c => g.P(c[0], c[1], c[2]))), null, on ? g.COL.blue : 'rgba(192,202,245,.7)', on ? 2 : 1.6);

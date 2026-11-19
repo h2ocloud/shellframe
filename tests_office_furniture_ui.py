@@ -3,13 +3,18 @@
 
 Reported with a screenshot: the bookshelf stood inside the small counter (the one with the black machine) and the personnel
 cabinet was pressed against it, next to the secretary's desk. The objects were laid one after another along the back
-wall from a fixed point, blind to the room's own furniture. Now the office page names the stretches of wall that are free
-(office.html OBJ_SLOTS) and each piece goes into the first one with room. This test reads the lobby's layout
-(__office.lobbyLayout: the room's furniture, the secretary's desk, the interns' tables, the objects; the boards on the
-back wall) and checks, so that the next piece of furniture (the ops TV, …) is held to it too:
-  - no two floor rectangles overlap; an object keeps at least 0.15 from everything else
-  - an object stands against the back wall, inside the room, off the walkways (x≈1.0 along the left, the front strip)
-  - an object does not stand in front of the whiteboard or the calendar
+wall from a fixed point, blind to the room's own furniture. Then reviewed: the lobby already has a bookshelf (the left
+wall, by the sofa), so a second one was one too many, and it crowded the secretary's desk. Now the room's own bookshelf
+IS the 書櫃 (office.html OBJ_FIXTURES: the red number and the click are on it) and only the cabinet is placed, in the
+stretch of back wall the page names as free (OBJ_SLOTS, behind the secretary). This test reads the lobby's layout
+(__office.lobbyLayout: the room's furniture, the secretary's desk, the interns' tables, the placed objects, the objects
+that are the room's pieces; the boards on the back wall) and checks, so that the next piece (the ops TV, …) is held to it too:
+  - no two floor rectangles overlap; a placed object keeps at least 0.15 from everything else
+  - a placed object stands against the back wall, inside the room, off the walkways (x≈1.0 along the left, the front strip)
+  - a placed object does not stand in front of the whiteboard or the calendar
+  - the bookshelf is the room's bookshelf (same rectangle), there is no second one, and the back wall left of the
+    secretary's rug stays open
+  - the bookshelf is a hit target where the room draws it, and its red number is drawn over it (pixels)
   - a third piece that fits nowhere gets no furniture (its toolbar button stays) instead of overlapping
 office.html on its own (demo host), Chromium and WebKit. Screenshots (Chromium): qa-shots/office-lobby-furniture-{flat,iso}-1280.png.
 Run: .venv/bin/python tests_office_furniture_ui.py
@@ -89,6 +94,17 @@ DEMO_OBJS = """(extra) => {
   return __office.objects().objects.map(o => [o.id, o.onWall]);
 }"""
 
+# pixels of the badge's red (#f7768e) in a box around an object's middle, on the canvas as drawn
+RED_NEAR = """(id) => { const b = __office.objPoint(id), cv = document.getElementById('stage'), r = cv.getBoundingClientRect();
+  const k = cv.width / r.width, d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, sx = b.x - r.left, sy = b.y - r.top;
+  let n = 0;
+  for (let y = Math.max(0, Math.round((sy - 90) * k)); y < Math.min(cv.height, Math.round((sy + 90) * k)); y++)
+    for (let x = Math.max(0, Math.round((sx - 70) * k)); x < Math.min(cv.width, Math.round((sx + 70) * k)); x++) {
+      const i = (y * cv.width + x) * 4; if (Math.abs(d[i] - 247) < 10 && Math.abs(d[i + 1] - 118) < 12 && Math.abs(d[i + 2] - 142) < 12) n++; }
+  return n; }"""
+
+DEMO_OBJS_BADGE0 = DEMO_OBJS.replace("badge: 2,", "badge: 0,", 1)
+
 srv = serve()
 base = f"http://127.0.0.1:{srv.server_port}"
 with sync_playwright() as pw:
@@ -115,9 +131,27 @@ with sync_playwright() as pw:
                 L = page.evaluate("__office.lobbyLayout()")
                 objs = layout_checks(L, "two objects")
                 ids = {o["id"]: o for o in objs}
+                fx = {f["id"]: f for f in L.get("fixtures", [])}
+                shelves = [f for f in L["floor"] if f["id"].startswith("decor:shelf")]
+                sh = shelves[0] if len(shelves) == 1 else None
+                bk = fx.get("obj:bookshelf")
+                check("the bookshelf is the room's own bookshelf (the left wall, by the sofa): same rectangle, and it is the only one",
+                      sh and bk and bk["on"] == sh["id"] and all(abs(bk[k] - sh[k]) < 1e-9 for k in ("x0", "x1", "y0", "y1"))
+                      and "obj:bookshelf" not in ids, (shelves, L.get("fixtures"), ids))
                 ctr = next((f for f in L["floor"] if f["id"].startswith("decor:counter")), None)
-                check("the bookshelf is right of the counter (the reported overlap), the cabinet behind the secretary's desk",
-                      ctr and ids["obj:bookshelf"]["x0"] >= ctr["x1"] + 0.15 and ids["obj:personnel"]["x0"] > L["rug"]["x0"], ids)
+                left = [o["id"] for o in objs if ctr and o["x1"] > ctr["x1"] and o["x0"] < L["rug"]["x0"]]
+                check("the cabinet stands behind the secretary's desk; the back wall between the counter and the rug stays open",
+                      set(ids) == {"obj:personnel"} and ids["obj:personnel"]["x0"] > L["rug"]["x0"] and not left, (ids, left))
+                pt = page.evaluate("__office.objPoint('bookshelf')")
+                check("the room's bookshelf is a hit target: the 書櫃 tooltip over it",
+                      pt and page.evaluate("([x, y]) => __office.wallAt(x, y)", [pt["x"], pt["y"]]) == "obj:bookshelf", pt)
+                n2 = page.evaluate(RED_NEAR, "bookshelf")
+                page.evaluate(DEMO_OBJS_BADGE0, False)
+                page.wait_for_timeout(150)
+                n0 = page.evaluate(RED_NEAR, "bookshelf")
+                page.evaluate(DEMO_OBJS, False)
+                page.wait_for_timeout(150)
+                check("…and its red number is drawn over it (the badge's red is there with a number, gone with none)", n2 - n0 > 25, (n2, n0))
                 if engine == "chromium":
                     SHOTS.mkdir(exist_ok=True)
                     page.evaluate("__office.setArea && __office.setArea('lobby')")
