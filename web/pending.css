@@ -115,3 +115,6 @@ body.sf-pend-docked #chat-layer { right: var(--pend-w); }
 body.sf-pend-strip #chat-layer { right: var(--pend-strip-w); }
 body.sf-pend-docked #chat-notice { right: calc(var(--pend-w) + 14px); }
 body.sf-pend-strip #chat-notice { right: calc(var(--pend-strip-w) + 14px); }
+
+/* icons (web/icons.js) */
+.pend-x .sfi { width: 14px; height: 14px; vertical-align: -3px; }

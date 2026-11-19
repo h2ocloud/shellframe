@@ -15,6 +15,7 @@ Demo data only. Needs playwright; SKIP without it. Run: .venv/bin/python tests_c
 """
 import json
 import pathlib
+import re
 import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -87,11 +88,21 @@ def open_page(browser, extra=None):
     return page, errors
 
 
+def idle(mic):
+    """The idle mic: a drawn icon (an <svg>), no words, not recording."""
+    return mic.locator("svg.sfi").count() == 1 and (mic.text_content() or "").strip() == "" and "rec" not in (mic.get_attribute("class") or "")
+
+
+def recording(mic):
+    """Recording: the stop icon and a timer such as 0:03."""
+    return mic.locator("svg.sfi").count() == 1 and re.fullmatch(r"\d+:\d\d", (mic.text_content() or "").strip()) is not None
+
+
 def run(browser, engine):
     print(f"[{engine}] 1. where it is")
     page, errors = open_page(browser)
     mic, send = page.locator("#chat-mic"), page.locator("#chat-send")
-    check("a microphone in the input row", mic.is_visible() and (mic.text_content() or "").strip() == "🎙")
+    check("a microphone in the input row", mic.is_visible() and idle(mic))
     m, s = mic.bounding_box(), send.bounding_box()
     check("…right beside Send", m["x"] + m["width"] <= s["x"] + 1 and abs(m["y"] + m["height"] / 2 - (s["y"] + s["height"] / 2)) < 4, (m, s))
     check("the floating one hides while the view shows", page.evaluate(FAB) == "none", page.evaluate(FAB))
@@ -105,7 +116,7 @@ def run(browser, engine):
     page.wait_for_timeout(300)
     check("recording starts", len(page.evaluate(CALLS, "mic_record_start")) == 1)
     check("…and shows: red, a timer, how to stop", "rec" in (mic.get_attribute("class") or "")
-          and (mic.text_content() or "").startswith("⏹") and "Esc" in page.inner_text("#chat-note"))
+          and recording(mic) and "Esc" in page.inner_text("#chat-note"))
     if engine == "webkit":
         page.screenshot(path=str(HERE / "qa-shots" / "chat-mic-rec.png"), clip=page.locator("#chat-compose").bounding_box())
     mic.click()
@@ -116,7 +127,7 @@ def run(browser, engine):
           page.input_value("#chat-input"))
     check("…not sent", not page.evaluate(CALLS, "chat_send"))
     check("…and the box has the cursor", page.evaluate("document.activeElement && document.activeElement.id") == "chat-input")
-    check("back to idle", (mic.text_content() or "").strip() == "🎙")
+    check("back to idle", idle(mic))
 
     print(f"[{engine}] 3. Esc while recording")
     page.fill("#chat-input", "")
@@ -127,7 +138,7 @@ def run(browser, engine):
     stops = page.evaluate(CALLS, "mic_record_stop")
     check("the recording is thrown away", stops and stops[-1][1:] == [True], stops[-1:])
     check("…the box untouched, the mic idle", page.input_value("#chat-input") == ""
-          and (mic.text_content() or "").strip() == "🎙")
+          and idle(mic))
 
     print(f"[{engine}] 4. the terminal")
     page.evaluate("window.SFChat.setMode('s501', 'cli')")
@@ -147,7 +158,7 @@ def run(browser, engine):
     page.click(".sf-dialog .btn-primary")
     page.wait_for_selector(".sf-dialog", state="detached")
     page.wait_for_timeout(200)
-    check("…and the mic is idle again", (mic.text_content() or "").strip() == "🎙")
+    check("…and the mic is idle again", idle(mic))
     check("no page errors", not errors, errors)
     page.close()
 

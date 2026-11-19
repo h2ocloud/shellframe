@@ -45,7 +45,7 @@
     const j = i.job;
     if (j && j.state === 'waiting') return { cls: 'wait', text: T('Switching when it is done', '等它做完再換') };
     if (j && j.state === 'switching') return { cls: 'busy', text: T('Switching…', '換模型中…') };
-    if (j && j.state === 'failed' && j.code !== 'cancelled') return { cls: 'bad', text: '⚠ ' + T('Not switched', '沒換成') };
+    if (j && j.state === 'failed' && j.code !== 'cancelled') return { cls: 'bad', icon: 'warn', text: T('Not switched', '沒換成') };
     if (j && j.state === 'unconfirmed') return { cls: 'warn', text: T('Sent, not confirmed', '已送出，未確認') };
     const c = i.current;
     if (!c) return { cls: 'unknown', text: T('Model: unknown', '模型：未知') };
@@ -58,7 +58,7 @@
     if (!st) return '';
     const i = info[sid];
     const title = T("Change this tab's model", '換這個分頁的模型') + (i.current ? ` (${i.cli_name})` : '');
-    return `<button class="tm-chip${st.cls ? ' tm-' + st.cls : ''}" data-act="model" title="${esc(title)}"><span>${esc(st.text)}</span><i>▾</i></button>`;
+    return `<button class="tm-chip${st.cls ? ' tm-' + st.cls : ''}" data-act="model" title="${esc(title)}"><span>${st.icon ? SFIcons.html(st.icon) + ' ' : ''}${esc(st.text)}</span><i>${SFIcons.html('chev-down')}</i></button>`;
   }
 
   // ── the pop-up ─────────────────────────────────────────────────────────
@@ -97,7 +97,7 @@
   function modelButtons(i, u, attr) {
     const cur = i.current_key;
     return i.models.map(m => `<button class="tm-opt${u.model === m.key && !u.custom ? ' on' : ''}${cur === m.key && m.key ? ' cur' : ''}" data-tm="${attr}" data-key="${esc(m.key)}">` +
-      `${esc(m.label)}${cur === m.key && m.key ? ' ✓' : ''}</button>`).join('');
+      `${esc(m.label)}${cur === m.key && m.key ? ' ' + SFIcons.html('check', { cls: 'tm-on' }) : ''}</button>`).join('');
   }
   function pickerHtml(sid) {
     const i = info[sid], u = U(sid);
@@ -128,7 +128,7 @@
   }
   function popHtml(sid) {
     const i = info[sid], u = U(sid);
-    return `<div class="tm-h"><b>${esc(i.cli_name)}</b><span>${esc(T('Model', '模型'))}</span><button class="tm-x" data-tm="close" title="${esc(T('Close', '關閉'))}">×</button></div>` +
+    return `<div class="tm-h"><b>${esc(i.cli_name)}</b><span>${esc(T('Model', '模型'))}</span><button class="tm-x" data-tm="close" title="${esc(T('Close', '關閉'))}" aria-label="${esc(T('Close', '關閉'))}">${SFIcons.html('close')}</button></div>` +
       jobHtml(sid) + cardHtml(sid) + (u.note ? `<div class="tm-hint">${esc(u.note)}</div>` : '') + (i.in_session ? pickerHtml(sid) : restartHtml(sid));
   }
   function anchorRect() {

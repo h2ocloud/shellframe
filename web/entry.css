@@ -41,7 +41,7 @@
 /* the foot: Settings · Guide · For AI · ? — words beside the icons when they fit, the icons with their titles when not */
 .sb-word { display: none; }
 #sb-footer-row.sfe-words { gap: 0; }
-#sb-footer-row.sfe-words > .sb-footer-btn, #sb-footer-row.sfe-words > #btn-settings { flex: none; width: auto; min-width: auto; overflow: visible; padding: 0 6px; gap: 4px; height: 28px; }
+#sb-footer-row.sfe-words > .sb-footer-btn, #sb-footer-row.sfe-words > #btn-settings { flex: none; width: auto; min-width: auto; overflow: visible; padding: 0 5px; gap: 4px; height: 28px; }
 #sb-footer-row.sfe-words > #btn-about { width: 28px; padding: 0; }
 #sb-footer-row.sfe-words .sb-word { display: inline; font-size: 12px; }
 #sb-footer-row.sfe-words .sb-footer-ico .sb-ico { opacity: .8; }
@@ -76,3 +76,9 @@
 .sfe-acts button.primary:hover { background: #89b4fa; }
 .sfe-acts button:focus-visible { outline: 2px solid #bb9af7; outline-offset: 1px; }
 .sfe-acts button:disabled { opacity: .55; cursor: default; }
+
+/* icons (web/icons.js) */
+.sfe-btn .sfe-ico { display: inline-flex; align-items: center; }
+.sfe-btn .sfe-ico .sfi { width: 15px; height: 15px; vertical-align: 0; }
+.sfe-title-ico { display: inline-flex; }
+.sfe-title-ico .sfi { width: 21px; height: 21px; vertical-align: 0; }

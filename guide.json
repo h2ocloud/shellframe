@@ -69,8 +69,8 @@
         "zh": "你的分頁"
       },
       "body": {
-        "en": "Every tab is listed here. Click one to switch to it, double-click to rename it. ↻ checks every tab's state again.",
-        "zh": "所有分頁都列在這裡。點一下切換，點兩下改名。↻ 會重新判斷每個分頁的狀態。"
+        "en": "Every tab is listed here. Click one to switch to it, double-click to rename it. The circular arrows beside the heading check every tab's state again.",
+        "zh": "所有分頁都列在這裡。點一下切換，點兩下改名。標題旁的循環箭頭會重新判斷每個分頁的狀態。"
       }
     },
     {
@@ -131,8 +131,8 @@
         "zh": "重啟 CLI"
       },
       "body": {
-        "en": "⟳ on an AI tab restarts its CLI to pick up an update. Claude Code and Codex come back to the same conversation.",
-        "zh": "AI 分頁上的 ⟳ 會重啟它的 CLI、套用更新。Claude Code 和 Codex 會接回同一段對話。"
+        "en": "The circular arrows on an AI tab restart its CLI to pick up an update. Claude Code and Codex come back to the same conversation.",
+        "zh": "AI 分頁上的循環箭頭會重啟它的 CLI、套用更新。Claude Code 和 Codex 會接回同一段對話。"
       }
     },
     {

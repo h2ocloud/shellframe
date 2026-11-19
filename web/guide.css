@@ -73,3 +73,6 @@
 .sfg-row-body { color: #a9b1d6; margin-top: 2px; }
 .sfg-show { flex-shrink: 0; }
 .sfg-busy .sfg-card { opacity: .6; pointer-events: none; }
+
+/* icons (web/icons.js) */
+.sfg-x .sfi { width: 14px; height: 14px; vertical-align: -3px; }

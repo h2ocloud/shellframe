@@ -221,7 +221,7 @@ def run(browser):
           and row(page, "demo_notes").locator("button").inner_text() == "✓ 已連結")
     board = row(page, "demo_board").inner_text()
     check("a connector that needs authorizing: one line on the row, the button still connects, no 'needs you'",
-          "⚠ 找到但連不上：Claude 帳號連接器" in board and row(page, "demo_board").locator("button").inner_text() == "連結"
+          "找到但連不上：Claude 帳號連接器" in board and row(page, "demo_board").locator(".cg-found svg.sfi").count() == 1 and row(page, "demo_board").locator("button").inner_text() == "連結"
           and "要處理" not in board, board)
     mail = row(page, "demo_mail").locator(".cn-main span").inner_text()
     check("the service whose own setup stopped at step 2 is connected through the way that works", mail == "已連結 · Claude 帳號連接器", mail)
@@ -238,10 +238,10 @@ def run(browser):
           and "在這台電腦上找到的" in card and "只有 Claude 分頁用得到" in card, card)
     conn = page.locator('#cn-card .cn-proto[data-route="connector"]')
     loc = page.locator('#cn-card .cn-proto[data-route="local"]')
-    check("…the connector way: ✅ checked, in use", conn.get_attribute("data-found") == "checked" and "✅" in conn.inner_text()
+    check("…the connector way: ✅ checked, in use", conn.get_attribute("data-found") == "checked" and conn.locator(".cn-proto-mark svg.sfi").count() == 1
           and "測過能通" in conn.inner_text() and "使用中" in conn.inner_text(), conn.inner_text())
     check("…the local way: 🟡 found in Codex (the person's own entry), not tested; ShellBot's setup at step 2 of 3",
-          loc.get_attribute("data-found") == "found" and "🟡" in loc.inner_text() and "找到了，還沒測" in loc.inner_text()
+          loc.get_attribute("data-found") == "found" and loc.locator(".cn-proto-mark svg.sfi").count() == 1 and "找到了，還沒測" in loc.inner_text()
           and "Codex：mail-tool（你自己的設定）" in loc.inner_text() and "ShellBot 的設定：做到第 2 步（共 3 步）" in loc.inner_text(), loc.inner_text())
     check("…the footer: clear ShellBot's setup, look again, done (no test, no reconnect on a way ShellBot did not set up)",
           [b.inner_text() for b in page.locator("#cn-card .cn-foot button").all()] == ["清掉 ShellBot 的設定", "重新找", "完成"],
@@ -295,8 +295,8 @@ def run(browser):
     loc = page.locator('#cn-card .cn-route[data-route="local"] .cn-route-found')
     con = page.locator('#cn-card .cn-route[data-route="connector"] .cn-route-found')
     check("each way's card says what was found: 🟡 the person's own entry in Codex, ⚠ the connector needs authorizing",
-          loc.get_attribute("data-found") == "found" and loc.inner_text() == "🟡 找到了，還沒測（你自己的設定）"
-          and con.get_attribute("data-found") == "broken" and con.inner_text() == "⚠ 找到但連不上", (loc.inner_text(), con.inner_text()))
+          loc.get_attribute("data-found") == "found" and loc.inner_text().strip() == "找到了，還沒測（你自己的設定）" and loc.locator("svg.sfi").count() == 1
+          and con.get_attribute("data-found") == "broken" and con.inner_text().strip() == "找到但連不上" and con.locator("svg.sfi").count() == 1, (loc.inner_text(), con.inner_text()))
     shot_card(page, "connect-detect-route-zh.png")
     page.click('#cn-card [data-act="close"]')
     row(page, "demo_photos").locator("button").click()
@@ -316,7 +316,7 @@ def run(browser):
     wait_connected(page, "demo_notes")
     check("English row words", row(page, "demo_files").locator(".cn-main span").inner_text() == "Connected · Claude account connector"
           and row(page, "demo_notes").locator(".cn-main span").inner_text() == "Connected · Local MCP (your own setting)"
-          and "⚠ Found, not working: Claude account connector" in row(page, "demo_board").inner_text())
+          and "Found, not working: Claude account connector" in row(page, "demo_board").inner_text())
     row(page, "demo_mail").locator("button").click()
     page.wait_for_selector("#cn-card .cn-protos", timeout=5000)
     loc = page.locator('#cn-card .cn-proto[data-route="local"]').inner_text()

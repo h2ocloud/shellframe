@@ -72,3 +72,6 @@
 .sched-msg.warn { color: #e0af68; }
 .sched-msg.bad { color: #f7768e; }
 .sched-msg code { color: #9ece6a; font-size: 10px; }
+
+/* icons (web/icons.js) */
+.sched-note .sfi-lead { width: 1.15em; height: 1.15em; vertical-align: -.22em; }

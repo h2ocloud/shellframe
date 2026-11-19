@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The entry row: 「🤖 Bots · 🏢 辦公室 · 📋 看板 N」 at the top of the sidebar (web/entry.js), in the real page with a
+"""The entry row: 「Bots · 辦公室 · 看板 N」 (each with its icon) at the top of the sidebar (web/entry.js), in the real page with a
 stand-in Python side. Demo data only.
 
 Asked for: Bots, the office and the board were hard to find (an icon at the sidebar's foot, a switch in Settings).
@@ -129,6 +129,9 @@ def run(browser, base, engine):
     words = page.evaluate("[...document.querySelectorAll('#sb-entry .sfe-label')].map(e => e.textContent)")
     check("labels: Bots / 辦公室 / 看板", words == ["Bots", "辦公室", "看板"], words)
     check("at 220 px the labels fit and show (zh)", all(labels_shown(page)), labels_shown(page))
+    icons = page.evaluate("[...document.querySelectorAll('#sb-entry .sfe-btn')].map(b => { const s = b.querySelector('.sfe-ico svg.sfi'), r = s && s.getBoundingClientRect(); return [!!s, !!r && r.width > 8 && r.height > 8, b.querySelector('.sfe-label').getBoundingClientRect().width > 0]; })")
+    check("default width: every button shows its drawn icon AND its word (sfe-words)", icons == [[True, True, True]] * 3
+          and page.evaluate("document.getElementById('sb-entry').classList.contains('sfe-words')"), icons)
     check("Bots on: solid; the office is off: dashed", page.evaluate("!document.getElementById('btn-bots').classList.contains('off') && document.getElementById('btn-office').classList.contains('off')"))
     check("…and the dashed one says it is off in its title", "未開啟" in page.get_attribute("#btn-office", "title"))
     badge = page.evaluate("(() => { const b = document.querySelector('#btn-taskboard .sfb-badge'); return b && !b.hidden ? b.textContent : ''; })()")
@@ -169,7 +172,7 @@ def run(browser, base, engine):
     page.wait_for_selector("#sfe-intro .sfe-card", timeout=3000)
     check("a card, modal, centred", page.evaluate("""() => { const c = document.querySelector('#sfe-intro .sfe-card').getBoundingClientRect();
         return document.querySelector('#sfe-intro .sfe-card').getAttribute('aria-modal') === 'true' && Math.abs((c.left + c.right) / 2 - innerWidth / 2) < 2 && Math.abs((c.top + c.bottom) / 2 - innerHeight / 2) < 40; }"""))
-    check("title 辦公室 + 未開啟", page.inner_text("#sfe-title").replace("\n", " ").strip().startswith("🏢") and "辦公室" in page.inner_text("#sfe-title") and "未開啟" in page.inner_text("#sfe-title"))
+    check("title 辦公室 + 未開啟", page.locator("#sfe-title svg.sfi").count() == 1 and "辦公室" in page.inner_text("#sfe-title") and "未開啟" in page.inner_text("#sfe-title"))
     check("three bullets", page.evaluate("document.querySelectorAll('#sfe-intro .sfe-list li').length") == 3)
     page.wait_for_function("document.querySelector('#sfe-intro .sfe-pic').complete", timeout=5000)
     check("one picture, loaded", page.evaluate("document.querySelectorAll('#sfe-intro img').length") == 1 and page.evaluate("document.querySelector('#sfe-intro .sfe-pic').naturalWidth") > 100)
