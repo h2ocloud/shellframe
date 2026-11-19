@@ -186,8 +186,8 @@ tk = ss.add("示範任務", now=NOW, path=DB)
 linked = reg(ENG, make("連任務.md", "內容"), title="demo-quarterly-report-2026-11-19-v2-final", task_id=tk["id"])
 res = O.action(ctx(), str(linked["id"]), "ask_change", {"text": "第 3 點改成表格  \n謝謝"})
 line = res["tell"]["text"]
-check("one line, the protocol form: （交付物）請改〈標題〉：〈你的話〉；檔案在〈路徑〉",
-      line == f"（交付物）請改demo-quarterly-report-2026-11-19-v2-final：第 3 點改成表格 謝謝；檔案在{linked['ref']}" and "\n" not in line, line)
+check("one line, the protocol form: （交付物）請改「標題」：你的話；檔案在 路徑",
+      line == f"（交付物）請改「demo-quarterly-report-2026-11-19-v2-final」：第 3 點改成表格 謝謝；檔案在{linked['ref']}" and "\n" not in line, line)
 check("it goes to the bot's tab through the chat view's send", res["tell"]["to"] == "b:eng")
 clean = oo.clean_action(res, trusted=True)
 check("the host keeps a long file name in that line (the 32-character rule is for untrusted text)",
@@ -202,12 +202,12 @@ check("an unlinked deliverable: no follow-up; a secret in the person's words is 
 check("nothing to say: refused", O.action(ctx(), str(r_md["id"]), "ask_change", {"text": "  "})["ok"] is False)
 check("a closed tab cannot be told", "tab" in O.action(ctx(), str(r_old["id"]), "ask_change", {"text": "x"})["message"] or "分頁" in O.action(ctx(), str(r_old["id"]), "ask_change", {"text": "x"})["message"])
 flag_line = O.action(ctx(), str(r_env["id"]), "ask_change", {"text": "改"})["tell"]["text"]
-check("a flagged file's line is the same form (the bot registered it, it knows where it is)", flag_line == f"（交付物）請改示範設定：改；檔案在{r_env['ref']}", flag_line)
+check("a flagged file's line is the same form (the bot registered it, it knows where it is)", flag_line == f"（交付物）請改「示範設定」：改；檔案在{r_env['ref']}", flag_line)
 link_line = O.action(ctx(), str(r_link["id"]), "ask_change", {"text": "改"})["tell"]["text"]
-check("a link: the same form, its address masked", link_line.startswith("（交付物）請改示範預覽站：改；檔案在https://demo.example.test/preview/login") and "zz9" not in link_line, link_line)
+check("a link: the same form, its address masked", link_line.startswith("（交付物）請改「示範預覽站」：改；檔案在https://demo.example.test/preview/login") and "zz9" not in link_line, link_line)
 os.environ["SHELLFRAME_PROMPT_LANG"] = "en"
 en = O.action(oo.Ctx("en", live_tabs=lambda: LIVE, deliv=lambda: {"path": DB, "home": HOME, "now": NOW}), str(r_md["id"]), "ask_change", {"text": "fix"})
-check("ONE protocol form, whatever the language: Chinese (the board's lines are too)", en["tell"]["text"].startswith("（交付物）請改示範週報草稿：fix；檔案在"), en["tell"]["text"])
+check("ONE protocol form, whatever the language: Chinese (the board's lines are too)", en["tell"]["text"].startswith("（交付物）請改「示範週報草稿」：fix；檔案在"), en["tell"]["text"])
 os.environ["SHELLFRAME_PROMPT_LANG"] = "zh"
 
 print("candidates")

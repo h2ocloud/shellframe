@@ -641,7 +641,7 @@ sfctl deliver show N
 - Only the person decides what happens next: 先放著 (keep it on the desk), 拿走 (clear it; History keeps it for 180 days),
   or 請他改. There is no command for you to keep, take or clear: a bot cannot clean the person's desk.
 - **請他改** reaches you as one ordinary message in your tab, always in this form (Chinese, like the board's 「（看板）…」 lines):
-  「（交付物）請改<title>：<what to change>；檔案在<path or link>」. Change the file in place or register the new one, and answer in
+  「（交付物）請改「<title>」：<what to change>；檔案在<path or link>」. Change the file in place or register the new one, and answer in
   one line. If the deliverable was tied to a task (`--task`), the request is also noted on it.
 - A file that looks like it holds a secret (a name such as `.env`, `*.pem`, `*token*`, a file in `~/.ssh`, `~/.aws`,
   `~/.config`…, a private key or a known kind of token inside, a URL with a token) is registered but **flagged**: no

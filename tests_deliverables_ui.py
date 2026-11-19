@@ -529,7 +529,7 @@ def run(browser, base, engine):
     sends = page.evaluate("window.__sends")
     check("Enter sends ONE line, in the protocol form, into that bot's tab through the chat send; the person's draft is left alone",
           len(sends) == 1 and sends[0]["sid"] == "s701" and sends[0]["clear"] is False and "\n" not in sends[0]["text"]
-          and sends[0]["text"].startswith("（交付物）請改示範週報草稿：第 3 點改成表格") and sends[0]["text"].endswith(R["md"]["ref"]), sends)
+          and sends[0]["text"].startswith("（交付物）請改「示範週報草稿」：第 3 點改成表格") and sends[0]["text"].endswith(R["md"]["ref"]), sends)
     check("the popup says it was sent, and the task it is tied to got its note only after the line went in", "已傳給示範工程師" in fr.evaluate("document.getElementById('ooMsg').textContent")
           and NOTES and NOTES[-1][0] == tk["id"] and "第 3 點改成表格" in NOTES[-1][1], (NOTES, fr.evaluate("document.getElementById('ooMsg').textContent")))
     fr.click('#ooActs [data-action="take"]')

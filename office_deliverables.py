@@ -498,7 +498,7 @@ class Deliverables(oo.OfficeObject):
         title = dv.mask_line(r["title"], 120, strict=False)
         where = dv.mask_line(r["ref"], 300, strict=False)
         # ONE form, in Chinese whatever the page's language is (the board's 「（看板）…」 lines are the same): a bot is told by protocol
-        text = f"（交付物）請改{title}：{words}；檔案在{where}"
+        text = f"（交付物）請改「{title}」：{words}；檔案在{where}"     # the board's lines quote the title the same way: （看板）#N「…」
         tell = {"to": key, "text": text}
         if r["task_id"]:
             tell["after"] = {"action": "ask_logged", "args": {"text": words}}
