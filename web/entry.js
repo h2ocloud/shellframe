@@ -26,7 +26,7 @@
 
   const FEATURES = {
     bots: {
-      flag: 'experimental_bots', icon: '🤖', pic: 'img/entry-bots.png',
+      flag: 'experimental_bots', icon: 'bot', pic: 'img/entry-bots.png',
       name: () => 'Bots',
       bullets: () => [
         t('Any tab can become a bot with its own name, face, job and memory.', '任何一個分頁都可以變成 bot：有自己的名字、頭像、執掌和記憶。'),
@@ -36,7 +36,7 @@
       where: () => t('To turn it off later: Settings → Bots.', '之後想關掉，到 設定 → Bots。'),
     },
     office: {
-      flag: 'experimental_office', icon: '🏢', pic: 'img/entry-office.png',
+      flag: 'experimental_office', icon: 'office', pic: 'img/entry-office.png',
       name: () => t('Office', '辦公室'),
       bullets: () => [
         t('Every bot is drawn as a person in an office: who is busy and who is waiting on you, at a glance.', '把每個 bot 畫成辦公室裡的一個人，誰在忙、誰在等你，一眼看完。'),
@@ -64,9 +64,9 @@
     entry = document.createElement('div');
     entry.id = 'sb-entry';
     entry.innerHTML = '<div class="sfe-row">' +
-      '<button type="button" class="sfe-btn" id="btn-bots" data-guide="entry-bots"><span class="sfe-ico" aria-hidden="true">🤖</span><span class="sfe-label"></span></button>' +
-      '<button type="button" class="sfe-btn" id="btn-office" data-guide="entry-office"><span class="sfe-ico" aria-hidden="true">🏢</span><span class="sfe-label"></span></button>' +
-      '<button type="button" class="sfe-btn" id="btn-taskboard" data-guide="taskboard"><span class="sfe-ico" aria-hidden="true">📋</span><span class="sfe-label"></span><span class="sfb-badge" hidden></span></button>' +
+      '<button type="button" class="sfe-btn" id="btn-bots" data-guide="entry-bots"><span class="sfe-ico" aria-hidden="true">' + SFIcons.html('bot') + '</span><span class="sfe-label"></span></button>' +
+      '<button type="button" class="sfe-btn" id="btn-office" data-guide="entry-office"><span class="sfe-ico" aria-hidden="true">' + SFIcons.html('office') + '</span><span class="sfe-label"></span></button>' +
+      '<button type="button" class="sfe-btn" id="btn-taskboard" data-guide="taskboard"><span class="sfe-ico" aria-hidden="true">' + SFIcons.html('clipboard') + '</span><span class="sfe-label"></span><span class="sfb-badge" hidden></span></button>' +
       '</div>';
     sb.insertBefore(entry, sb.firstChild);
     rowEl = entry.firstChild;
@@ -203,7 +203,7 @@
     card.setAttribute('data-kind', kind);
     card.innerHTML = `<div class="sfe-card" role="dialog" aria-modal="true" aria-labelledby="sfe-title">` +
       `<img class="sfe-pic" src="${esc(F.pic)}" alt="">` +
-      `<div class="sfe-main"><div class="sfe-title" id="sfe-title"><span aria-hidden="true">${F.icon}</span><span>${esc(name)}</span>` +
+      `<div class="sfe-main"><div class="sfe-title" id="sfe-title"><span class="sfe-title-ico" aria-hidden="true">${SFIcons.html(F.icon)}</span><span>${esc(name)}</span>` +
       `<span class="sfe-chip">${t('off', '未開啟')}</span></div>` +
       `<ul class="sfe-list">${F.bullets().map(b => `<li>${esc(b)}</li>`).join('')}</ul>` +
       `<div class="sfe-note">${esc(F.where())}</div><div class="sfe-err" hidden></div>` +
