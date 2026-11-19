@@ -24,4 +24,16 @@ ok &= check("no top-level t(): office.html uses t for a task card in many functi
 ok &= check("officeHost exposes lang()",
             bool(re.search(r"const officeHost = \{[\s\S]*?\n\s*lang: \(\) => lang\(\),", JS)))
 
+# Every toolbar button with words gets them from applyOfficeCopy (reported: 「排程」 stayed Chinese in English).
+# The demo-only buttons (addOne, addTen: hidden with live data) are left out.
+copy = HTML[HTML.index("function applyOfficeCopy"):HTML.index("applyOfficeCopy();")]
+worded = [m.group(1) for m in re.finditer(r'<button class="tb[^"]*" id="([A-Za-z]+)"[^>]*>([^<]*[^\s<][^<]*)</button>', HTML)]
+worded += [m.group(1) for m in re.finditer(r'<button class="tb[^"]*" id="([A-Za-z]+)"[^>]*>(?:<i [^>]*></i>)?<span[^>]*>[^<]*[^\s<]', HTML)]
+missing = [b for b in worded if b not in ("addOne", "addTen") and not re.search(r"(?:text|spanText)\('#" + b + r"\b", copy)]
+ok &= check(f"every worded toolbar button is translated in applyOfficeCopy ({len(worded)} found)", len(worded) >= 4 and not missing)
+if missing:
+    print("     missing:", missing)
+ok &= check("the lobby's wall boards name themselves in the page's language (hover tip, view title)",
+            "get name() { return tr('Task board', '任務看板'); }" in HTML and "get name() { return tr('Schedules', '排程'); }" in HTML)
+
 sys.exit(0 if ok else 1)

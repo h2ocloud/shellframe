@@ -796,6 +796,7 @@ function applyOfficeCopy() {
   spanText('#demoHandoff', 'Demo handoff', '交辦示範');
   attr('#demoHandoff', 'title', 'Run a handoff demo', '立刻演一次交辦');
   text('#openBoard', 'Board', '看板'); attr('#openBoard', 'title', 'Task board: the lobby whiteboard', '任務看板：大廳牆上的白板，記著大家手上的事'); attr('#openBoard', 'aria-label', 'Task board', '任務看板');
+  text('#openCal', 'Schedules', '排程'); attr('#openCal', 'title', "Schedules: the lobby calendar, /loop in conversations and this computer's scheduled jobs", '排程：大廳牆上的日曆，對話裡的 /loop 和這台電腦的排程'); attr('#openCal', 'aria-label', 'Schedules', '排程');
   text('#resetSeats', 'Reset seats', '還原座位'); attr('#resetSeats', 'title', 'Clear dragged seats and restore the default layout', '清掉拖曳換過的位子，回到規則排法');
   attr('#zoomOut', 'title', 'Zoom out', '縮小'); attr('#zoomOut', 'aria-label', 'Zoom out', '縮小');
   attr('#zoomIn', 'title', 'Zoom in', '放大'); attr('#zoomIn', 'aria-label', 'Zoom in', '放大');
@@ -2023,7 +2024,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) chat
               沒有 boardState 的電腦（舊版 ShellBot 沒有這個呼叫）房裡就沒有白板。
    檢視不在 renderPanel 裡重畫：用簽章，沒變就不碰 DOM（展開的列、點擊才不會被吃掉）；倒數只改字，由畫面迴圈順手更新。 */
 M.board = null; M.notes = []; M.boardVer = 0; M.notesAt = 0; M.boardJson = ''; M.boardAt = 0; M.loops = []; M.loopsVer = 0; M.loopsJson = '';
-const WALL_OBJ = { board: { name: '任務看板', q: [1.4, 0, 4.9, 0, 0, 1, 28, 60] }, cal: { name: '排程', q: [5.1, 0, 5.9, 0, 0, 1, 38, 64] } };
+const WALL_OBJ = { board: { get name() { return tr('Task board', '任務看板'); }, q: [1.4, 0, 4.9, 0, 0, 1, 28, 60] }, cal: { get name() { return tr('Schedules', '排程'); }, q: [5.1, 0, 5.9, 0, 0, 1, 38, 64] } };   // name: the hover tip and the view's title, in the page's language
 // 牆邊的家具（書櫃、人事檔案櫃…）：每件是一個「辦公室物件」（office_objects.py 的宣告＋四個掛鉤），畫法、蓋板（共用的彈出視窗）在 web/office_objects.js；
 // 這裡只接線：牆上的東西是 'obj:<id>'，點到、或按右下角同名的按鈕，開同一種蓋板。標題字、字樣都由主頁（HOST.objects）給，已是這一頁的語言。
 // Where the lobby's objects may stand on the back wall: behind the secretary at the right, like a file cabinet behind a desk,
