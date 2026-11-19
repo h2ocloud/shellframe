@@ -48,6 +48,17 @@ if (fs.existsSync(file)) {
       'fileDropHint', 'chooseFile', 'downloadsHint', 'queued', 'queuedOffline',
       'fileSent', 'fileReceived', 'me', 'peer', 'sendFailed', 'dropPathError',
       'pairCodeGenerationFailed', 'remoteControlDenied', 'remoteStreamDisconnected', 'remoteAttachFailed', 'remoteCloseSession',
+      'usageLoading', 'resetLabel', 'accountNoUsageData', 'accountUnsupported',
+      'usageUnavailable', 'snapshotLabel', 'checkedLabel', 'paceLabel',
+      'cliManagedLogin', 'currentSession', 'nextSession', 'nextSessionGlobal',
+      'switchCurrent', 'setNext', 'installProvider', 'providerBinaryMissing', 'notInstalled',
+      'singleAccount', 'notLoggedIn', 'notLoggedInHint', 'accountCount',
+      'backendNotReported', 'frontendKnowsCli', 'backendNoAccount',
+      'noLoginAccounts', 'loginNewAccount',
+      'refreshLoggedIn', 'aiAccountsTitle', 'accountPanelNote', 'paceToggle',
+      'refreshUsage', 'close', 'processing', 'queryingUsage', 'usageUpdated',
+      'paceEnabled', 'paceDisabled', 'installCommandFailed', 'installTabOpened',
+      'accountUpdated', 'loginTabOpened', 'operationFailed', 'accountDataReadFailed',
     ].every(k => Object.prototype.hasOwnProperty.call(table.en, k) && Object.prototype.hasOwnProperty.call(table['zh-TW'], k)));
   }
 }

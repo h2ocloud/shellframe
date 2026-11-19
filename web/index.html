@@ -698,6 +698,7 @@
   .sb-remote { padding-left: 26px; color: #787c99; cursor: pointer; }
   .sb-remote:hover { color: #c0caf5; }
   .sb-remote-hint { padding: 2px 12px 4px 26px; font-size: 10px; color: #3b4261; }
+  .sb-remote-hint [data-pact] { display: inline-flex; align-items: center; height: 18px; line-height: 18px; }
   .sb-item { cursor: grab; -webkit-user-select: none; user-select: none; }
   .sb-item:active { cursor: grabbing; }
   /* visibility (not display) so the row layout doesn't shift on hover */
@@ -5147,7 +5148,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (!_accountPanelEl) return;
     const cells = _accountPanelEl.querySelectorAll('[data-usage-key]');
     if (!cells.length) return;
-    if (force) cells.forEach(el => { el.innerHTML = '<span class="au-note">用量查詢中…</span>'; });
+    if (force) cells.forEach(el => { el.innerHTML = `<span class="au-note">${t('usageLoading')}</span>`; });
     try {
       const res = JSON.parse(await pywebview.api.account_usage_all(!!force) || '{}');
       if (!res.success) throw new Error(res.message || '用量查詢失敗');
@@ -5163,7 +5164,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   }
   function _accountLabel(item) {
-    if (!item) return '尚未登入';
+    if (!item) return t('notLoggedIn');
     return [item.email, item.label && item.label !== item.email ? item.label : '', item.plan]
       .filter(Boolean).join(' · ');
   }
@@ -5182,33 +5183,33 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     return `${m[1]}-${m[2]}` === today ? m[3] : text;
   }
   function _accountUsageHtml(u) {
-    if (!u) return '<span class="au-note">用量查詢中…</span>';
+    if (!u) return `<span class="au-note">${t('usageLoading')}</span>`;
     const seg = (label, info) => `<span class="au-seg"><span class="au-k">${label}</span>` + (info
       ? `<span class="au-v ${_usageLevel(info.pct)}">${info.pct}%</span>` +
-        `<span class="au-reset">重置 ${esc(_shortWhen(info.reset) || '?')}</span>`
+        `<span class="au-reset">${t('resetLabel')} ${esc(_shortWhen(info.reset) || '?')}</span>`
       : '<span class="au-note">—</span>') + '</span>';
     if (!u.five_hr && !u.week) {
       const why = u.error_message ||
-        (u.error === 'no_data' ? '這個帳號還沒有用量資料'
-          : u.error === 'not_ai' ? '不支援的帳號類型'
-            : '查不到用量');
+        (u.error === 'no_data' ? t('accountNoUsageData')
+          : u.error === 'not_ai' ? t('accountUnsupported')
+            : t('usageUnavailable'));
       return `<span class="au-bad">${SFIcons.html('warn')} ${esc(why)}</span>`;
     }
     const parts = [seg('5h', u.five_hr), seg('7d', u.week)];
     // Same pace line as the pill, but with room to spell the gap out.
     const pace = _paceEnabled() ? _usagePace(u.week) : null;
     if (pace) {
-      parts.push(`<span class="au-seg"><span class="au-k">配速</span>` +
+      parts.push(`<span class="au-seg"><span class="au-k">${t('paceLabel')}</span>` +
         `<span class="au-v ${_paceLevel(pace.diff)}">${pace.target}%</span>` +
         `<span class="au-reset">${esc(_paceGapText(pace))}</span></span>`);
     }
     if (u.stale) {
-      parts.push(`<span class="au-bad">${SFIcons.html('warn')} ${esc(u.error_message || '本次更新失敗，顯示上次資料')}` +
+      parts.push(`<span class="au-bad">${SFIcons.html('warn')} ${esc(u.error_message || t('usageStaleTip'))}` +
         `${u.checked ? `（${esc(_shortWhen(u.checked))}）` : ''}</span>`);
     } else if (u.snapshot) {
-      parts.push(`<span class="au-note">快照 ${esc(_shortWhen(u.snapshot))}</span>`);
+      parts.push(`<span class="au-note">${t('snapshotLabel')} ${esc(_shortWhen(u.snapshot))}</span>`);
     } else if (u.checked) {
-      parts.push(`<span class="au-note">查詢 ${esc(_shortWhen(u.checked))}</span>`);
+      parts.push(`<span class="au-note">${t('checkedLabel')} ${esc(_shortWhen(u.checked))}</span>`);
     }
     return parts.join('');
   }
@@ -5225,53 +5226,53 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const id = esc(item.id || '');
       const currentOn = current && current.id === item.id;
       const globalOn = global && global.id === item.id;
-      const tags = single ? 'CLI 自己管理登入'
-        : `${currentOn ? '目前 Session' : ''}${currentOn && globalOn ? ' · ' : ''}${globalOn ? '下一個 Session' : ''}`;
+      const tags = single ? t('cliManagedLogin')
+        : `${currentOn ? t('currentSession') : ''}${currentOn && globalOn ? ' · ' : ''}${globalOn ? t('nextSession') : ''}`;
       return `<div class="account-row"><div class="account-name">${esc(_accountLabel(item))}` +
         `<small>${tags}</small>` +
         `<div class="account-usage" data-usage-key="${provider}|${id}">${_accountUsageHtml(usage[item.id])}</div></div>` +
         (single ? '' :
-          `<button class="btn btn-ghost" data-account-action="session" data-provider="${provider}" data-ref="${id}" ${currentOn ? 'disabled' : ''}>切目前</button>` +
-          `<button class="btn btn-ghost" data-account-action="global" data-provider="${provider}" data-ref="${id}" ${globalOn ? 'disabled' : ''}>設下一個</button>`) +
+          `<button class="btn btn-ghost" data-account-action="session" data-provider="${provider}" data-ref="${id}" ${currentOn ? 'disabled' : ''}>${t('switchCurrent')}</button>` +
+          `<button class="btn btn-ghost" data-account-action="global" data-provider="${provider}" data-ref="${id}" ${globalOn ? 'disabled' : ''}>${t('setNext')}</button>`) +
         `</div>`;
     }).join('');
     // A CLI that isn't installed can't have accounts — say that, and offer the
     // install instead of an empty row the user can't act on.
     const missing = info.installed === false;
     const installButton = (missing && (info.install || {}).command)
-      ? `<button class="btn btn-primary" data-account-action="install-provider" data-provider="${provider}">安裝 ${esc(title)}</button>`
+      ? `<button class="btn btn-primary" data-account-action="install-provider" data-provider="${provider}">${tf('installProvider', {provider: esc(title)})}</button>`
       : '';
     if (missing) {
       return `<div class="account-provider"><div class="account-provider-title"><span>${esc(title)}</span>` +
-        `<span style="font-size:10px;color:#e0af68">未安裝</span></div>` +
-        `<div style="color:#565f89;font-size:11px;padding:5px 0 8px">本機找不到執行檔` +
+        `<span style="font-size:10px;color:#e0af68">${t('notInstalled')}</span></div>` +
+        `<div style="color:#565f89;font-size:11px;padding:5px 0 8px">${t('providerBinaryMissing')}` +
         `${(info.install || {}).command ? `：<code>${esc(info.install.command)}</code>` : ''}</div>` +
         `<div style="display:flex;gap:6px">${installButton}</div></div>`;
     }
     if (single) {
       return `<div class="account-provider"><div class="account-provider-title"><span>${esc(title)}</span>` +
-        `<span style="font-size:10px;color:#565f89">${info.logged_in ? '單一帳號' : '未登入'}</span></div>` +
-        `<div class="account-list">${rows || '<div style="color:#565f89;font-size:11px;padding:5px">尚未登入（在分頁裡執行該 CLI 登入）</div>'}</div></div>`;
+        `<span style="font-size:10px;color:#565f89">${info.logged_in ? t('singleAccount') : t('notLoggedIn')}</span></div>` +
+        `<div class="account-list">${rows || `<div style="color:#565f89;font-size:11px;padding:5px">${t('notLoggedInHint')}</div>`}</div></div>`;
     }
     return `<div class="account-provider"><div class="account-provider-title"><span>${title}</span>` +
-      `<span style="font-size:10px;color:#565f89">${info.logged_in ? `${info.accounts.length} 個帳號` : '未登入'}</span></div>` +
-      `<div class="account-scope"><div class="account-scope-card"><div class="scope">目前 Session</div><div class="who">${esc(_accountLabel(current))}</div></div>` +
-      `<div class="account-scope-card"><div class="scope">下一個 Session（全域）</div><div class="who">${esc(_accountLabel(global))}</div></div></div>` +
-      `<div class="account-list">${rows || '<div style="color:#565f89;font-size:11px;padding:5px">尚未發現登入帳號</div>'}</div>` +
-      `<div style="display:flex;gap:6px;margin-top:8px"><button class="btn btn-primary" data-account-action="login" data-provider="${provider}">登入新帳號</button>` +
-      `<button class="btn btn-ghost" data-account-action="capture" data-provider="${provider}">重新整理已登入</button></div></div>`;
+      `<span style="font-size:10px;color:#565f89">${info.logged_in ? tf('accountCount', {count: info.accounts.length}) : t('notLoggedIn')}</span></div>` +
+      `<div class="account-scope"><div class="account-scope-card"><div class="scope">${t('currentSession')}</div><div class="who">${esc(_accountLabel(current))}</div></div>` +
+      `<div class="account-scope-card"><div class="scope">${t('nextSessionGlobal')}</div><div class="who">${esc(_accountLabel(global))}</div></div></div>` +
+      `<div class="account-list">${rows || `<div style="color:#565f89;font-size:11px;padding:5px">${t('noLoginAccounts')}</div>`}</div>` +
+      `<div style="display:flex;gap:6px;margin-top:8px"><button class="btn btn-primary" data-account-action="login" data-provider="${provider}">${t('loginNewAccount')}</button>` +
+      `<button class="btn btn-ghost" data-account-action="capture" data-provider="${provider}">${t('refreshLoggedIn')}</button></div></div>`;
   }
   async function showAccountPanel() {
     if (!_accountPanelEl) {
       _accountPanelEl = document.createElement('div');
       _accountPanelEl.className = 'modal-overlay';
       _accountPanelEl.style.zIndex = '450';
-      _accountPanelEl.innerHTML = `<div class="modal" style="width:570px;max-width:94vw"><h2>AI 帳號</h2>` +
-        `<div class="account-panel-note">切換「目前 Session」只重啟這個 tab；其他 tab 不動。切換「下一個 Session」只影響之後新開的 tab。</div>` +
+      _accountPanelEl.innerHTML = `<div class="modal" style="width:570px;max-width:94vw"><h2>${t('aiAccountsTitle')}</h2>` +
+        `<div class="account-panel-note">${t('accountPanelNote')}</div>` +
         `<div id="account-panel-body"></div><div class="modal-footer"><span id="account-panel-status" style="color:#e0af68;font-size:11px"></span>` +
         `<button class="btn btn-ghost" id="account-pace-toggle" data-account-action="pace"></button>` +
-        `<button class="btn btn-ghost" data-account-action="usage">重新查用量</button>` +
-        `<button class="btn btn-ghost" data-account-action="close">關閉</button></div></div>`;
+        `<button class="btn btn-ghost" data-account-action="usage">${t('refreshUsage')}</button>` +
+        `<button class="btn btn-ghost" data-account-action="close">${t('close')}</button></div></div>`;
       document.body.appendChild(_accountPanelEl);
       _accountPanelEl.addEventListener('click', async (event) => {
         if (event.target === _accountPanelEl || event.target.dataset.accountAction === 'close') {
@@ -5283,26 +5284,26 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         const provider = button.dataset.provider;
         const ref = button.dataset.ref;
         const status = document.getElementById('account-panel-status');
-        if (status) status.textContent = '處理中…';
+        if (status) status.textContent = t('processing');
         try {
           let raw;
           if (action === 'usage') {
-            if (status) status.textContent = '查詢用量中…';
+            if (status) status.textContent = t('queryingUsage');
             await _loadAccountUsage(true);
-            if (status) status.textContent = '用量已更新';
+            if (status) status.textContent = t('usageUpdated');
             return;
           }
           // Second entry point for the pacing switch: the pill is where you
           // notice it, so turning it off right here beats digging through 設定.
           if (action === 'pace') {
             await saveUsagePaceEnabled(!_paceEnabled());
-            if (status) status.textContent = _paceEnabled() ? '配速已開啟' : '配速已關閉';
+            if (status) status.textContent = _paceEnabled() ? t('paceEnabled') : t('paceDisabled');
             return;
           }
           if (action === 'install-provider') {
             const r = JSON.parse(await pywebview.api.install_provider(provider) || '{}');
-            if (!r.success) throw new Error(r.message || '安裝指令送出失敗');
-            if (status) status.textContent = r.message || '已開安裝分頁';
+            if (!r.success) throw new Error(r.message || t('installCommandFailed'));
+            if (status) status.textContent = r.message || t('installTabOpened');
             return;
           }
           if (action === 'session') raw = await pywebview.api.account_switch_session(activeId || '', provider, ref);
@@ -5312,11 +5313,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           else return;
           const result = JSON.parse(raw || '{}');
           if (!result.success && result.message) throw new Error(result.message);
-          if (status) status.textContent = result.message || (action === 'login' ? '登入 tab 已開啟' : '已更新');
+          if (status) status.textContent = result.message || (action === 'login' ? t('loginTabOpened') : t('accountUpdated'));
           await showAccountPanel();
           if (action === 'session' || action === 'global') refreshUsageBrief();
         } catch (error) {
-          if (status) status.textContent = error.message || '操作失敗';
+          if (status) status.textContent = error.message || t('operationFailed');
         }
       });
     }
@@ -5324,7 +5325,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const status = _accountPanelEl.querySelector('#account-panel-status');
     if (status) status.textContent = '';
     const paceButton = _accountPanelEl.querySelector('#account-pace-toggle');
-    if (paceButton) paceButton.textContent = `配速 ${_paceEnabled() ? '開' : '關'}`;
+    if (paceButton) paceButton.textContent = tf('paceToggle', {state: _paceEnabled() ? t('paceOn') : t('paceOff')});
     try {
       const state = JSON.parse(await pywebview.api.account_state(activeId || '') || '{}');
       const providers = state.providers || {};
@@ -5344,16 +5345,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         // sends the user off to re-login for no reason.
         : `<div class="account-provider"><div class="account-provider-title">` +
           `<span>${esc((AI_PROVIDERS[p] && AI_PROVIDERS[p].label) || p)}</span>` +
-          `<span style="font-size:10px;color:#e0af68">後端未回報</span></div>` +
-          `<div style="color:#565f89;font-size:11px;padding:5px 0">前端認得這個 CLI，` +
-          `但後端沒有回它的帳號資料——通常是 app 更新後 Python 端還沒重啟。` +
-          `重啟 ShellBot 就會出現（不是登入問題）。</div></div>`
+          `<span style="font-size:10px;color:#e0af68">${t('backendNotReported')}</span></div>` +
+          `<div style="color:#565f89;font-size:11px;padding:5px 0">${t('frontendKnowsCli')} ` +
+          `${t('backendNoAccount')}</div></div>`
       ).join('');
       // Usage needs network / a codex app-server spawn, so it must not hold the
       // panel closed: rows render first, then fill in (cached ones instantly).
       _loadAccountUsage(false);
     } catch (error) {
-      body.textContent = error.message || '帳號資料讀取失敗';
+      body.textContent = error.message || t('accountDataReadFailed');
     }
     _accountPanelEl.classList.add('open');
   }

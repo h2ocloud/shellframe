@@ -23,6 +23,8 @@ if "remoteTabTitle" not in index or "peerReachable" not in index:
     failures.append("peer detail does not use locale keys")
 if "messagesTitle" not in index or "filesTitle" not in index:
     failures.append("message/file panels do not use locale keys")
+if "[data-pact]" not in index or "align-items:center" not in index:
+    failures.append("peer action row does not vertically align its four actions")
 
 if failures:
     print("FAIL")

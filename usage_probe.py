@@ -31,6 +31,15 @@ import urllib.request
 import urllib.error
 from datetime import datetime
 
+import sf_lang
+
+
+def _lang(en, zh): return sf_lang.pick(en, zh)
+
+def _stale_snapshot_message():
+    return _lang("This account’s snapshot credential was rejected (it may have expired); usage is unavailable (the account may still work: run it once, or refresh signed-in accounts)", "這個帳號的快照憑證被拒（可能已過期），查不到用量（帳號本身可能還好用：切到它跑一次，或按「重新整理已登入」）")
+
+
 # Primary source for Claude water-level: the OAuth usage API, called directly
 # with the local Keychain token (no browser, no external script). The old
 # openclaw script lives only on the openclaw host, so depending on it made
@@ -597,12 +606,10 @@ def _fetch_claude_profile(env):
     token = _claude_oauth(env).get("accessToken") if env else None
     if not token:
         return {"_error": "auth_required",
-                "_error_message": "找不到這個帳號的憑證，請重新登入"}
+                "_error_message": _lang("No credentials found for this account; please sign in again", "找不到這個帳號的憑證，請重新登入")}
     if _claude_profile_expired(env):
         return {"_error": "snapshot_stale",
-                "_error_message": "這個帳號的快照憑證過期，查不到用量"
-                                  "（帳號本身可能還好用：切到它跑一次，"
-                                  "或按「重新整理已登入」）"}
+                "_error_message": _lang("This account’s snapshot credential has expired; usage is unavailable (the account may still work: run it once, or refresh signed-in accounts)", "這個帳號的快照憑證過期，查不到用量（帳號本身可能還好用：切到它跑一次，或按「重新整理已登入」）")}
     try:
         req = urllib.request.Request(CLAUDE_USAGE_API, headers={
             "Authorization": f"Bearer {token}",
@@ -616,17 +623,15 @@ def _fetch_claude_profile(env):
     except urllib.error.HTTPError as e:
         if e.code in (401, 403):
             return {"_error": "snapshot_stale",
-                    "_error_message": "這個帳號的快照憑證被拒（可能已過期），查不到用量"
-                                      "（帳號本身可能還好用：切到它跑一次，"
-                                      "或按「重新整理已登入」）"}
+                    "_error_message": _stale_snapshot_message()}
         if e.code == 429:
             return {"_error": "rate_limited",
-                    "_error_message": "Claude 用量 API 查詢過於頻繁，稍後重試"}
+                    "_error_message": _lang("Claude usage API was queried too often; try again later", "Claude 用量 API 查詢過於頻繁，稍後重試")}
         return {"_error": "api_error",
-                "_error_message": f"Claude 用量 API 回 HTTP {e.code}"}
+                "_error_message": _lang(f"Claude usage API returned HTTP {e.code}", f"Claude 用量 API 回 HTTP {e.code}")}
     except Exception as e:
         return {"_error": "network_error",
-                "_error_message": f"連線 Claude 用量 API 失敗：{type(e).__name__}"}
+                "_error_message": _lang(f"Could not reach the Claude usage API: {type(e).__name__}", f"連線 Claude 用量 API 失敗：{type(e).__name__}")}
     out = {}
     for source, target in (("five_hour", "5hr"), ("seven_day", "week")):
         item = data.get(source) or {}
@@ -948,10 +953,8 @@ def _fetch_codex_app_server(home=None):
             message = str((response.get("error") or {}).get("message") or "")
             if "401" in message or "token_invalidated" in message or "Unauthorized" in message:
                 return {"_error": "snapshot_stale",
-                        "_error_message": "這個帳號的快照憑證被拒（可能已過期），查不到用量"
-                                          "（帳號本身可能還好用：切到它跑一次，"
-                                          "或按「重新整理已登入」）"}
-            return {"_error": "app_server_error", "_error_message": "Codex 用量服務暫時無法查詢"}
+                        "_error_message": _stale_snapshot_message()}
+            return {"_error": "app_server_error", "_error_message": _lang("Codex usage service is temporarily unavailable", "Codex 用量服務暫時無法查詢")}
         result = response.get("result") or {}
         rate_limits = result.get("rateLimits") or {}
         out = {}
@@ -1082,7 +1085,7 @@ def _agy_quota():
     binary = _agy_binary()
     if not binary:
         return {"_error": "not_installed",
-                "_error_message": "找不到 agy（Antigravity CLI）"}
+                "_error_message": _lang("agy (Antigravity CLI) was not found", "找不到 agy（Antigravity CLI）")}
     try:
         r = subprocess.run(
             [binary, "-p", "/usage", "--output-format", "json",
@@ -1091,7 +1094,7 @@ def _agy_quota():
         )
     except (subprocess.SubprocessError, OSError) as e:
         return {"_error": "probe_failed",
-                "_error_message": f"agy 用量查詢失敗：{type(e).__name__}"}
+                "_error_message": _lang(f"agy usage lookup failed: {type(e).__name__}", f"agy 用量查詢失敗：{type(e).__name__}")}
     payload = None
     for line in reversed((r.stdout or "").strip().splitlines()):
         try:
@@ -1101,10 +1104,10 @@ def _agy_quota():
             continue
     if not payload:
         return {"_error": "probe_failed",
-                "_error_message": "agy 沒有回傳可解析的用量 JSON（可能需要重新登入）"}
+                "_error_message": _lang("agy returned no parseable usage JSON (you may need to sign in again)", "agy 沒有回傳可解析的用量 JSON（可能需要重新登入）")}
     if str(payload.get("status") or "").upper() not in ("SUCCESS", ""):
         return {"_error": "auth_required",
-                "_error_message": "agy 查不到用量，請執行 agy 重新登入"}
+                "_error_message": _lang("agy usage is unavailable; run agy and sign in again", "agy 查不到用量，請執行 agy 重新登入")}
 
     groups = ((payload.get("command") or {}).get("data") or {}).get("groups") or []
     parsed = []
@@ -1125,7 +1128,7 @@ def _agy_quota():
             })
     if not parsed:
         return {"_error": "no_data",
-                "_error_message": "agy 回了用量但沒有任何額度區間"}
+                "_error_message": _lang("agy returned usage but no quota windows", "agy 回了用量但沒有任何額度區間")}
 
     primary = next((g for g in parsed if "gemini" in g["name"].lower()), parsed[0])
     out = {primary["key"]: (primary["used"], primary["reset"])}
@@ -1326,7 +1329,7 @@ def _account_usage_locked(provider, env, ref, account, force, is_current,
         if cache.get("error"):
             return _shape(provider, dict(cache["error"]), account)
         return _shape(provider, {"_error": "rate_limited",
-                                 "_error_message": "剛查過，稍後再試"}, account)
+                                 "_error_message": _lang("Checked recently; try again later", "剛查過，稍後再試")}, account)
     cache["last_try"] = now
 
     if provider == "codex":
@@ -1368,29 +1371,27 @@ def probe_text(d: dict) -> str:
     """Render an already-fetched structured reading as the slash-command text."""
     ai = d.get("ai")
     if ai is None:
-        return "此 tab 不是 claude / codex，無法查用量。"
+        return _lang("This tab is not claude/codex; usage cannot be checked.", "此 tab 不是 claude / codex，無法查用量。")
 
     account = d.get("account")
     if d.get("error"):
-        lines = [f"AI 水位 {ai}"]
-        if account:
-            lines.append(f"帳號 {account}")
-        lines.append(d.get("error_message") or f"查不到資料（請確認已登入 {ai}）")
+        lines = [_lang(f"AI usage {ai}", f"AI 水位 {ai}")]
+        if account: lines.append(_lang(f"Account {account}", f"帳號 {account}"))
+        lines.append(d.get("error_message") or _lang(f"No usage data (please confirm you are signed in to {ai})", f"查不到資料（請確認已登入 {ai}）"))
         return "\n".join(lines)
 
-    lines = [f"AI 水位 {ai}"]
-    if account:
-        lines.append(f"帳號 {account}")
+    lines = [_lang(f"AI usage {ai}", f"AI 水位 {ai}")]
+    if account: lines.append(_lang(f"Account {account}", f"帳號 {account}"))
     if d.get("stale"):
-        lines.append("⚠ 本次更新失敗，顯示上次資料")
+        lines.append(_lang("⚠ This update failed; showing the last known data", "⚠ 本次更新失敗，顯示上次資料"))
     if d.get("five_hr"):
         fh = d["five_hr"]
-        lines.append(f"1. 5hr：{fh['pct']}%｜重置 {fh['reset']}")
+        lines.append(_lang(f"1. 5hr: {fh['pct']}% | reset {fh['reset']}", f"1. 5hr：{fh['pct']}%｜重置 {fh['reset']}"))
     if d.get("week"):
         wk = d["week"]
-        lines.append(f"2. Week：{wk['pct']}%｜重置 {wk['reset']}")
+        lines.append(_lang(f"2. Week: {wk['pct']}% | reset {wk['reset']}", f"2. Week：{wk['pct']}%｜重置 {wk['reset']}"))
     if d.get("snapshot"):
-        lines.append(f"快照 {d['snapshot']}")
+        lines.append(_lang(f"Snapshot {d['snapshot']}", f"快照 {d['snapshot']}"))
     return "\n".join(lines)
 
 
