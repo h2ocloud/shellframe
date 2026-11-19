@@ -189,11 +189,11 @@
   已經裝好的維持原本的設定。由 `tests_entry_row_ui.py`、`tests_entry_defaults.py` 守著。
 
 - **A switch to stop sharing this computer's tasks with paired computers.**
-  Settings → Connect has 「不分享任務給隔壁電腦」, off by default. When it is on, `GET /link/tasks` answers 403
+  Settings → Office has 「不分享任務給隔壁電腦」, off by default. When it is on, `GET /link/tasks` answers 403
   before reading anything, and the other computer's board shows this one as not shared. Covered by
   `tests_link_share_tasks_off.py`.
 
-  **新增開關：不把這台的任務分享給配對的電腦。** 設定 → 連線有「不分享任務給隔壁電腦」，預設關。打開後，`GET /link/tasks`
+  **新增開關：不把這台的任務分享給配對的電腦。** 設定 → 辦公室有「不分享任務給隔壁電腦」，預設關。打開後，`GET /link/tasks`
   在讀任何資料之前就回 403，另一台的看板會顯示這台沒有分享。由 `tests_link_share_tasks_off.py` 守著。
 
 ### Internal
