@@ -19,4 +19,9 @@ if hits:
     print("FAIL: web/i18n.js locale data was counted by cjk_scan")
     print("\n".join(hits))
     raise SystemExit(1)
-print("PASS: cjk_scan excludes web/i18n.js zh-TW locale data")
+hits = [line for line in result.stdout.splitlines() if line.startswith("python\tsched_view.py:")]
+if hits:
+    print("FAIL: sched_view.py bilingual values were counted by cjk_scan")
+    print("\n".join(hits))
+    raise SystemExit(1)
+print("PASS: cjk_scan excludes extracted bilingual locale data")

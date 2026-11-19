@@ -59,6 +59,16 @@ if (fs.existsSync(file)) {
       'refreshUsage', 'close', 'processing', 'queryingUsage', 'usageUpdated',
       'paceEnabled', 'paceDisabled', 'installCommandFailed', 'installTabOpened',
       'accountUpdated', 'loginTabOpened', 'operationFailed', 'accountDataReadFailed',
+      'pasteSend', 'pasteCancel', 'boardResizeTitle', 'linkResizeTitle', 'collapse',
+      'presetDefault', 'providerNotInstalled', 'providerRunLine', 'providerNotFound',
+      'providerInstallOfficial', 'providerDocs', 'providerCancel', 'providerInstallTab',
+      'providerInstallFailed', 'wakeNow', 'nextWake', 'cloudSchedule', 'roundsRun',
+      'remoteHistoryNoResponse', 'remoteHistoryUnavailable', 'remoteImageOnly',
+      'remoteImageFailed', 'usageQuerying', 'usageQueryFailed', 'insert', 'select',
+      'updateChecking', 'updateCheckFailed', 'updateAvailable', 'upToDate',
+      'updateNow', 'updateFailed', 'newVersionAvailable', 'updating', 'restartRequired',
+      'restartCoreHint', 'restartSessionsHint', 'updatedTo', 'availableClick',
+      'restarting', 'failedPrefix', 'relaunchApplyHint', 'scheduledLaunch', 'running', 'updateAvailableShort', 'updatingDots',
     ].every(k => Object.prototype.hasOwnProperty.call(table.en, k) && Object.prototype.hasOwnProperty.call(table['zh-TW'], k)));
   }
 }

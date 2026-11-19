@@ -141,12 +141,13 @@ def external_locale_lines(lines: list[str]) -> set[int]:
 
 
 def helper_lines(lines: list[str]) -> set[int]:
-    """Return lines belonging to a multi-line sf_lang.pick / _(en, zh) call."""
+    """Return lines belonging to a multi-line bilingual helper call."""
     marked: set[int] = set()
     active = False
     depth = 0
     for lineno, line in enumerate(lines, 1):
-        if not active and ("sf_lang.pick(" in line or re.search(r"\b_\s*\(", line)):
+        if not active and ("sf_lang.pick(" in line or re.search(r"\b_\s*\(", line)
+                           or re.search(r"\bL\s*\(", line)):
             active = True
             depth = 0
         if active:
@@ -189,7 +190,14 @@ def python_records(root: Path) -> list[tuple[str, int, str]]:
             continue
         try:
             source = path.read_text(encoding="utf-8")
-            translated = helper_lines(source.splitlines())
+            source_lines = source.splitlines()
+            translated = helper_lines(source_lines)
+            # Weekday names are the Traditional Chinese half of the bilingual
+            # _weekdays_text() table, just like the values inside L(en, zh).
+            translated.update(i for i, line in enumerate(source_lines, 1)
+                              if re.search(r"^\s*_WEEK_ZH\s*=", line))
+            translated.update(i for i, line in enumerate(source_lines, 1)
+                             if "行事曆：" in line and "Calendar:" in line)
             tokens = tokenize.generate_tokens(io.StringIO(source).readline)
             for token in tokens:
                 if token.type != tokenize.STRING or token.start[0] in translated or not runs(token.string):

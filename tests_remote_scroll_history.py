@@ -52,6 +52,9 @@ PAGE = """<!doctype html><meta charset="utf-8">
 <script>
 window.__calls = [];       // 打了哪支 API
 window.__shown = null;     // overlay 收到什麼
+const t = (key) => key === 'remoteHistoryNoResponse' ? '沒有回應' : key;
+const tf = (key, values) => key === 'remoteHistoryUnavailable'
+  ? '（取不到遠端歷史：' + values.why + '）\\n對方那台需要 v0.35.2 以上才有這個端點。' : key;
 const sessions = {};
 const ScrollHistory = {
   isOpen: () => false,

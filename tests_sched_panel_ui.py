@@ -36,6 +36,7 @@ sys.path.insert(0, str(HERE))
 # even when this file is started some way run_tests.sh does not.
 os.environ.setdefault("SHELLFRAME_TESTS", "1")
 SHOTS = HERE / "qa-shots"
+BATCH6_SHOTS = Path(os.environ["SF_BATCH6_SHOT_DIR"]) if os.environ.get("SF_BATCH6_SHOT_DIR") else None
 NOW = datetime(2026, 11, 12, 14, 20)
 
 passed = failed = 0
@@ -146,7 +147,7 @@ STATES_PAYLOAD = payload(STATES, STATES_LOADED)
 
 STUB = """
 window.__calls = [];
-window.__cfg = %s; window.__sched = %s;
+window.__cfg = %s; window.__sched = %s; window.__batch6Shots = %s;
 const R = v => Promise.resolve(typeof v === 'string' ? v : JSON.stringify(v));
 window.pywebview = { api: new Proxy({}, { get: (t, prop) => {
   if (prop === 'then') return undefined;
@@ -158,6 +159,12 @@ window.pywebview = { api: new Proxy({}, { get: (t, prop) => {
       case 'list_sessions': return R([{sid: 's1', cmd: 'claude', alive: true, label: 'Demo', bridge_enabled: true}]);
       case 'get_active_tab': return R({sid: 's1'});
       case 'read_output': case 'plugin_sidebar_badges': return R('');
+      case 'get_version': return R(window.__batch6Shots ? {version: '0.59.0'} : {});
+      case 'check_update': return R(window.__batch6Shots ? {local: '0.59.0', update_available: false} : {});
+      case 'ai_skill_status': return R(window.__batch6Shots ? {success: true, details: {
+        claude: true, claude_path: '~/.claude/CLAUDE.md', codex: true,
+        codex_available: true, codex_path: '~/.codex/AGENTS.md', sfctl: 'sfctl'
+      }} : {});
       case 'schedules_list': return R(window.__sched);
       case 'schedule_set_enabled': return R({success: true, enabled: !!args[1]});
       case 'schedule_prompt': return R({success: true, sid: args[1]});
@@ -169,7 +176,10 @@ window.pywebview = { api: new Proxy({}, { get: (t, prop) => {
 
 
 def cfg(lang):
-    return {"settings": {"experimental_loops": True, "language": lang, "sidebar_open": True},
+    settings = {"experimental_loops": True, "language": lang, "sidebar_open": True}
+    if BATCH6_SHOTS:
+        settings["release_seen_version"] = "0.59.0"
+    return {"settings": settings,
             "presets": [{"name": "Claude", "cmd": "claude", "icon": "C"}], "agent_roster": {}}
 
 
@@ -180,7 +190,8 @@ def open_panel(browser, data, lang="zh-TW", width=1100, board_w=None):
     c = cfg(lang)
     if board_w:
         c["settings"]["board_width"] = board_w
-    page.add_init_script(STUB % (json.dumps(c, ensure_ascii=False), json.dumps(data, ensure_ascii=False)))
+    page.add_init_script(STUB % (json.dumps(c, ensure_ascii=False), json.dumps(data, ensure_ascii=False),
+                                 json.dumps(bool(BATCH6_SHOTS))))
     page.goto((HERE / "web" / "index.html").as_uri())
     page.wait_for_selector("#btn-board", state="visible", timeout=30000)
     page.click("#btn-board")
@@ -249,6 +260,10 @@ with sync_playwright() as pw:
     check("every row's Edit button sits in the same column (a one-off's missing switch leaves its place)", len(set(geo["edits"])) == 1, geo["edits"])
     check("a name stays on one line, and so does every chip (no 'running' cut in two)", max(geo["titles"]) <= 20 and max(geo["chips"]) <= 16, geo)
     page.locator("#board-panel").screenshot(path=str(SHOTS / "sched-panel-zh.png"))
+    if BATCH6_SHOTS:
+        BATCH6_SHOTS.mkdir(parents=True, exist_ok=True)
+        page.set_viewport_size({"width": 1280, "height": 900})
+        page.screenshot(path=str(BATCH6_SHOTS / "schedule-zh-1280.png"), scale="css")
 
     print("interactions")
     page.click(".sched-row[data-id^='group:'] .sched-edit")
@@ -282,6 +297,15 @@ with sync_playwright() as pw:
     check("nothing leaked in Chinese into the English panel's schedule rows", not any(
         ch in r["text"] for r in rs for ch in "每單次週編輯執行常駐"), [r["text"] for r in rs if any(ch in r["text"] for ch in "每單次週編輯執行常駐")][:2])
     page.locator("#board-panel").screenshot(path=str(SHOTS / "sched-panel-en.png"))
+    if BATCH6_SHOTS:
+        for width in (1280, 900):
+            page.set_viewport_size({"width": width, "height": 900})
+            page.screenshot(path=str(BATCH6_SHOTS / f"schedule-en-{width}.png"), scale="css")
+        page.click("#btn-about")
+        page.wait_for_selector("#modal-about.open", timeout=5000)
+        for width in (1280, 900):
+            page.set_viewport_size({"width": width, "height": 900})
+            page.screenshot(path=str(BATCH6_SHOTS / f"main-about-en-{width}.png"), scale="css")
     page.close()
 
     print("one-off states")

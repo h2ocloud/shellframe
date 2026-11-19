@@ -881,7 +881,7 @@
   <span data-sfi="clipboard"></span>
   <span class="pc-hint">
     Large paste — <b id="pc-stats"></b>.
-    <kbd>Enter</kbd> 送出 · <kbd>Esc</kbd> 取消
+    <kbd>Enter</kbd> <span data-i18n="pasteSend">送出</span> · <kbd>Esc</kbd> <span data-i18n="pasteCancel">取消</span>
   </span>
   <span class="pc-preview" id="pc-preview"></span>
 </div>
@@ -932,7 +932,7 @@
          淡出。pointer-events:none 讓它不吃點擊、不影響選字。 -->
     <div id="tab-hint" hidden></div>
   </div>
-  <div class="panel-resizer" id="board-resizer" title="拖曳調整寬度"></div>
+  <div class="panel-resizer" id="board-resizer" data-i18n-title="boardResizeTitle" title="拖曳調整寬度"></div>
   <div id="board-panel" class="collapsed">
     <div id="board-header">
       <span class="bp-title" data-i18n="loopsPanelTitle">Loops · 排程對話</span>
@@ -945,12 +945,12 @@
 <!-- Frame Link — 跨機配對面板（下半部分割，🔗 展開） -->
 <!-- 訊息／檔案內容區（從側欄 peer 的 💬📁 點開；遠端 session 不在這裡、
      直接在主終端區開）。不再重複整棵 peer/session 樹。 -->
-<div id="link-resizer" title="拖曳調整高度"></div>
+<div id="link-resizer" data-i18n-title="linkResizeTitle" title="拖曳調整高度"></div>
 <div id="link-panel">
   <div id="link-main">
     <div id="link-main-head">
       <span id="link-main-title" style="color:#565f89">—</span>
-      <button class="link-act" id="btn-link-close" style="margin-left:auto" title="收起" data-sfi="close"></button>
+      <button class="link-act" id="btn-link-close" style="margin-left:auto" data-i18n-title="collapse" title="收起" data-sfi="close"></button>
     </div>
     <div id="link-main-body"></div>
     <div id="link-input-row" style="display:none">
@@ -1377,7 +1377,7 @@
       <p style="color:#9aa5ce" data-i18n="skillGuideNote">分頁裡的 AI 其實不用等你貼：讓它自己跑 <code>sfctl skill</code>，印出來的就是這台機器實際安裝的版本，開頭會標明版本與哪些實驗性功能是開著的。</p>
       <div id="skill-install" style="margin-top:8px;padding:8px 10px;background:#1a1b26;border:1px solid #3b4261;border-radius:6px">
         <div style="font-size:11px;color:#a9b1d6;margin-bottom:6px" data-i18n="skillDefault">讓 AI 預設就會用</div>
-        <div id="skill-install-status" style="font-size:11px;color:#565f89;line-height:1.7">讀取中…</div>
+        <div id="skill-install-status" style="font-size:11px;color:#565f89;line-height:1.7">Loading…</div>
         <div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap">
           <button class="btn btn-ghost" id="btn-install-claude" style="font-size:11px;padding:4px 10px" data-i18n="skillRewriteClaude">重新寫入 Claude Code</button>
           <button class="btn btn-ghost" id="btn-install-codex" style="font-size:11px;padding:4px 10px" data-i18n="skillWriteCodex">寫入 Codex AGENTS.md</button>
@@ -2093,7 +2093,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     el.className = 'preset-item' + (grouped ? ' p-grouped' : '');
     const primary = grouped
       ? `<div class="p-variant${item.variant ? '' : ' p-default'}">`
-        + `${esc(item.variant || '預設')}</div>`
+        + `${esc(item.variant || t('presetDefault'))}</div>`
       : `<div class="p-name">${esc(item.name)}</div>`;
     el.innerHTML =
       `<span class="p-icon">${item.icon || '▶'}</span>`
@@ -2492,18 +2492,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       overlay.className = 'modal-overlay open';
       overlay.style.zIndex = '460';
       overlay.innerHTML = `<div class="modal" style="width:540px;max-width:94vw">` +
-        `<h2>${esc(label)} 尚未安裝</h2>` +
-        `<div class="account-panel-note">這個分頁要跑 <code>${esc(cmd)}</code>，` +
-        `但本機找不到 ${esc(label)} 的執行檔。可以直接用官方指令安裝：</div>` +
+        `<h2>${tf('providerNotInstalled', {label: esc(label)})}</h2>` +
+        `<div class="account-panel-note">${tf('providerRunLine', {cmd: esc(cmd)})}` +
+        `${tf('providerNotFound', {label: esc(label)})}</div>` +
         (install.command
           ? `<pre style="background:#1a1b26;border:1px solid #292e42;border-radius:6px;` +
             `padding:9px;font-size:11px;color:#a9b1d6;overflow-x:auto;margin:8px 0">` +
             `${esc(install.command)}</pre>` : '') +
         (install.note ? `<div class="account-panel-note">${esc(install.note)}</div>` : '') +
         `<div class="modal-footer">` +
-        (install.docs ? `<button class="btn btn-ghost" data-gate="docs">看官方文件</button>` : '') +
-        `<button class="btn btn-ghost" data-gate="cancel">取消</button>` +
-        (install.command ? `<button class="btn btn-primary" data-gate="install">在新分頁安裝</button>` : '') +
+        (install.docs ? `<button class="btn btn-ghost" data-gate="docs">${t('providerDocs')}</button>` : '') +
+        `<button class="btn btn-ghost" data-gate="cancel">${t('providerCancel')}</button>` +
+        (install.command ? `<button class="btn btn-primary" data-gate="install">${t('providerInstallTab')}</button>` : '') +
         `</div></div>`;
       document.body.appendChild(overlay);
       overlay.addEventListener('click', async (event) => {
@@ -2519,7 +2519,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             const r = JSON.parse(await pywebview.api.install_provider(info.provider) || '{}');
             if (!r.success && r.message) await SFDialog.alert(r.message);
           } catch (e) {
-            await SFDialog.alert((e && e.message) || '安裝指令送出失敗');
+            await SFDialog.alert((e && e.message) || t('providerInstallFailed'));
           }
         }
         resolve(false);                  // 不論如何都不開這個 AI 分頁
@@ -4748,7 +4748,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // countdown ticks client-side without the server re-pushing every second.
   const SCHED_SOURCES = { scheduler: 1, scheduled: 1, auto: 1 };
   function fmtCountdown(ms) {
-    if (ms <= 0) return '即將喚醒';
+    if (ms <= 0) return t('wakeNow');
     const s = Math.round(ms / 1000);
     if (s < 60) return s + 's';
     const m = Math.floor(s / 60);
@@ -4824,11 +4824,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       rows.sort((a, b) => (RANK[a.status] - RANK[b.status]) ||
         ((a.next_ts || Infinity) - (b.next_ts || Infinity)) ||
         String(a.label).localeCompare(String(b.label)));
-      const KIND_TAG = { loop: 'LOOP', cron: 'CRON', sched: '排程啟動' };
+      const KIND_TAG = { loop: 'LOOP', cron: 'CRON', sched: t('scheduledLaunch') };
       const loopHtml = rows.map(r => {
         const cd = (r.kind === 'loop' && r.next_ts)
-          ? (r.status === 'running' ? '執行中' : '下次 ' + fmtCountdown(r.next_ts * 1000 - now))
-          : (r.kind === 'cron' ? '雲端排程' : '');
+          ? (r.status === 'running' ? t('running') : t('nextWake') + ' ' + fmtCountdown(r.next_ts * 1000 - now))
+          : (r.kind === 'cron' ? t('cloudSchedule') : '');
         return `<div class="loop-row k-${r.kind} st-${r.status}" data-sid="${r.sid}">` +
           `<span class="loop-dot"></span>` +
           `<div class="loop-body">` +
@@ -4837,7 +4837,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           (cd ? `<span class="loop-cd">${esc(cd)}</span>` : '') +
           `</div>` +
           (r.reason ? `<div class="loop-reason">${esc(r.reason)}</div>` : '') +
-          (r.kind === 'loop' && r.rounds ? `<div class="loop-meta">已跑 ${r.rounds} 輪</div>` : '') +
+          (r.kind === 'loop' && r.rounds ? `<div class="loop-meta">${tf('roundsRun', {count: r.rounds})}</div>` : '') +
           `</div></div>`;
       }).join('');
 
@@ -5151,7 +5151,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (force) cells.forEach(el => { el.innerHTML = `<span class="au-note">${t('usageLoading')}</span>`; });
     try {
       const res = JSON.parse(await pywebview.api.account_usage_all(!!force) || '{}');
-      if (!res.success) throw new Error(res.message || '用量查詢失敗');
+      if (!res.success) throw new Error(res.message || t('usageQueryFailed'));
       _accountUsage = res.providers || {};
       cells.forEach(el => {
         const [provider, ref] = (el.dataset.usageKey || '').split('|');
@@ -5159,7 +5159,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       });
     } catch (error) {
       cells.forEach(el => {
-        el.innerHTML = `<span class="au-bad">${SFIcons.html('warn')} ${esc(error.message || '用量查詢失敗')}</span>`;
+        el.innerHTML = `<span class="au-bad">${SFIcons.html('warn')} ${esc(error.message || t('usageQueryFailed'))}</span>`;
       });
     }
   }
@@ -6046,9 +6046,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         // 失敗時什麼都不做，看起來就跟「這功能不存在」一模一樣——而最可能的
         // 原因正是對方那台還沒更新（舊版沒有這個端點）。所以照樣開 overlay，
         // 把原因寫在裡面。
-        const why = (result && result.message) || '沒有回應';
-        return { text: '（取不到遠端歷史：' + why + '）\n'
-                     + '對方那台需要 v0.35.2 以上才有這個端點。',
+        const why = (result && result.message) || t('remoteHistoryNoResponse');
+        return { text: tf('remoteHistoryUnavailable', {why}),
                  source: 'remote', ansi: false };
       }
       return { text: d.text, source: d.source || 'remote', ansi: !!d.ansi };
@@ -6173,7 +6172,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (s.isRemote) {
       const info = parseRemoteSid(activeId);
       if (!dataUrl) {
-        s.term.write('\r\n\x1b[33m[遠端 session 僅支援貼「圖片」；一般檔案請用側欄的「檔案」傳送]\x1b[0m\r\n');
+        s.term.write('\r\n\x1b[33m' + t('remoteImageOnly') + '\x1b[0m\r\n');
         return;
       }
       const fname = (path && path.split('/').pop()) || 'paste.png';
@@ -6183,7 +6182,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       pywebview.api.link_remote_paste(info.peerId, info.rsid, dataUrl, fname)
         .then(raw => {
           let r = {}; try { r = JSON.parse(raw); } catch (e) {}
-          if (!r.success) s.term.write('\r\n\x1b[31m[遠端貼圖失敗：' + esc0((r && r.message) || '') + ']\x1b[0m\r\n');
+          if (!r.success) s.term.write('\r\n\x1b[31m' + tf('remoteImageFailed', {error: esc0((r && r.message) || '')}) + '\x1b[0m\r\n');
           // 送出後清掉 chip（路徑已注入對方）
           s.attachments = s.attachments.filter(a => a.tag !== s.attachCounter);
           updateImageBar();
@@ -6270,16 +6269,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // can only undo via line-kill). When triggered by the toolbar button there
     // is nothing to undo, so skip it — otherwise we'd wipe the user's input line.
     if (clearComposer) { try { pywebview.api.write_input(sid, '\x15'); } catch (_) {} }
-    showUsageModal('查詢用量中…');
+    showUsageModal(t('usageQuerying'));
     try {
       const txt = await pywebview.api.tab_usage(sid);
-      showUsageModal(txt || '用量查詢失敗');
+      showUsageModal(txt || t('usageQueryFailed'));
       // Opening the modal is an explicit "update now": re-probe the top-bar pill
       // too, so it can't keep showing 查不到 while the modal already has numbers
       // (the two use different endpoints — tab_usage vs tab_usage_brief).
       if (sid === activeId) { try { refreshUsageBrief(); } catch (_) {} }
     } catch (e) {
-      showUsageModal('用量查詢失敗');
+      showUsageModal(t('usageQueryFailed'));
     }
   }
   let _usageModalEl = null;
@@ -8035,7 +8034,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         `<div class="tp-item${i === tagPicker.sel ? ' sel' : ''}" data-i="${i}">` +
         `<span class="tp-label">${esc(c.label)}</span><span class="tp-sid">${esc(c.sid)}</span></div>`
       ).join('') +
-      '<div class="tp-hint">↑↓ 選擇 · Enter 插入 · Esc 取消</div>';
+      `<div class="tp-hint">↑↓ ${t('select')} · Enter ${t('insert')} · Esc ${t('pasteCancel')}</div>`;
     const sel = tagPickerEl.querySelector('.tp-item.sel');
     if (sel) sel.scrollIntoView({ block: 'nearest' });
   }
@@ -8887,24 +8886,24 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const result = document.getElementById('check-update-result');
     btn.disabled = true;
     result.style.color = '#565f89';
-    result.textContent = lang === 'zh-TW' ? '檢查中...' : 'Checking...';
+    result.textContent = t('updateChecking');
 
     try {
       const raw = await pywebview.api.check_update();
       const info = JSON.parse(raw);
       if (info.error) {
         result.style.color = '#f7768e';
-        result.textContent = lang === 'zh-TW' ? '檢查失敗' : 'Check failed';
+        result.textContent = t('updateCheckFailed');
       } else if (info.update_available) {
         result.style.color = '#e0af68';
-        result.textContent = lang === 'zh-TW' ? `v${info.remote} 可更新` : `v${info.remote} available`;
+        result.textContent = tf('updateAvailableShort', {remote: info.remote});
       } else {
         result.style.color = '#9ece6a';
-        result.textContent = lang === 'zh-TW' ? '✓ 已是最新版' : '✓ Up to date';
+        result.textContent = t('upToDate');
       }
     } catch(e) {
       result.style.color = '#f7768e';
-      result.textContent = lang === 'zh-TW' ? '檢查失敗' : 'Failed';
+      result.textContent = t('updateCheckFailed');
     }
     btn.disabled = false;
     // Also refresh the header status
@@ -8966,21 +8965,19 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         $updateStatus.textContent = info.error;
       } else if (info.update_available) {
         $updateStatus.className = 'status available';
-        $updateStatus.textContent = lang === 'zh-TW'
-          ? `有新版本：v${info.remote}（目前 v${info.local}）`
-          : `Update available: v${info.remote} (current: v${info.local})`;
+        $updateStatus.textContent = tf('updateAvailable', {remote: info.remote, local: info.local});
         const btn = document.createElement('button');
         btn.className = 'btn-update';
-        btn.textContent = lang === 'zh-TW' ? '立即更新' : 'Update now';
+        btn.textContent = t('updateNow');
         btn.addEventListener('click', doUpdate);
         $updateBar.appendChild(btn);
       } else {
         $updateStatus.className = 'status up-to-date';
-        $updateStatus.textContent = (lang === 'zh-TW' ? '✓ 已是最新版' : '✓ Up to date') + ` (v${info.local})`;
+        $updateStatus.textContent = t('upToDate') + ` (v${info.local})`;
       }
     } catch(e) {
       $updateStatus.className = 'status error';
-      $updateStatus.textContent = lang === 'zh-TW' ? '檢查更新失敗' : 'Update check failed';
+      $updateStatus.textContent = t('updateCheckFailed');
     }
   }
 
@@ -9062,8 +9059,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
       if (info.update_available) {
         document.getElementById('update-badge').textContent = `v${info.local} → v${info.remote}`;
-        document.getElementById('update-msg').textContent =
-          lang === 'zh-TW' ? '有新版本可用' : 'A new version is available';
+        document.getElementById('update-msg').textContent = t('newVersionAvailable');
 
         try {
           const resp = await fetch(`https://raw.githubusercontent.com/h2ocloud/shellbot/main/CHANGELOG.md`);
@@ -9097,7 +9093,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   });
   document.getElementById('btn-update-now').addEventListener('click', async () => {
     const badge = document.getElementById('update-badge');
-    badge.textContent = lang === 'zh-TW' ? '更新中...' : 'Updating...';
+    badge.textContent = t('updatingDots');
     document.getElementById('btn-update-now').disabled = true;
 
     const raw = await pywebview.api.do_update();
@@ -9115,7 +9111,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         showReleaseNotes(result.version);
       }
     } else {
-      badge.textContent = (lang === 'zh-TW' ? '更新失敗：' : 'Failed: ') + result.message;
+      badge.textContent = t('failedPrefix') + result.message;
       document.getElementById('btn-update-now').disabled = false;
     }
   });
@@ -9134,17 +9130,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     overlay.innerHTML = `
       <div class="modal" style="width:380px;padding:20px">
         <div class="up-big-restart">${SFIcons.html('refresh')}</div>
-        <h2 style="font-size:14px;margin-bottom:10px;text-align:center">${isZh ? '需要重啟 ShellBot' : 'Restart Required'}</h2>
+        <h2 style="font-size:14px;margin-bottom:10px;text-align:center">${t('restartRequired')}</h2>
         <div style="font-size:12px;color:#a9b1d6;line-height:1.6;margin-bottom:6px">
           ${version ? `<div style="color:#9ece6a;margin-bottom:6px">v${version}</div>` : ''}
-          ${isZh
-            ? '此次更新包含核心程式碼改動，需要重啟 ShellBot 才能生效。'
-            : 'This update changes core code. ShellBot needs to restart.'}
+          ${t('restartCoreHint')}
         </div>
         <div style="font-size:11px;color:#9ece6a;background:rgba(158,206,106,.08);border-left:2px solid #9ece6a;padding:8px 10px;margin:10px 0;border-radius:3px">
-          ${isZh
-            ? `${SFIcons.html('check', { cls: 'sfi-lead' })} 你的 session 會被保留 — 重啟後 tmux 會自動 reattach，對話從原本的位置繼續。`
-            : `${SFIcons.html('check', { cls: 'sfi-lead' })} Your sessions will be preserved — tmux reattaches automatically after restart.`}
+          ${SFIcons.html('check', { cls: 'sfi-lead' })} ${t('restartSessionsHint')}
         </div>
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
           <button class="btn btn-ghost" id="restart-later">${isZh ? '稍後' : 'Later'}</button>
@@ -9155,7 +9147,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('restart-later').addEventListener('click', () => overlay.remove());
     document.getElementById('restart-now').addEventListener('click', async () => {
       document.getElementById('restart-now').disabled = true;
-      document.getElementById('restart-now').textContent = isZh ? '重啟中...' : 'Restarting...';
+      document.getElementById('restart-now').textContent = t('restarting');
       const raw = await pywebview.api.restart_app();
       try {
         const result = JSON.parse(raw);
@@ -9179,7 +9171,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           if (canConfirm) {
             btn.onclick = async () => {
               btn.disabled = true;
-              btn.textContent = isZh ? '重啟中...' : 'Restarting...';
+              btn.textContent = t('restarting');
               await pywebview.api.restart_app(true);
             };
           }
@@ -9193,7 +9185,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     opts = opts || {};
     document.getElementById('release-title').textContent = opts.whatsNew
       ? `${t('releaseNotesTitle')} · v${version}`
-      : (lang === 'zh-TW' ? `已更新至 v${version}` : `Updated to v${version}`);
+      : tf('updatedTo', {version});
     document.querySelector('#modal-release .modal > div:first-child > div:first-child').innerHTML =
       SFIcons.html(opts.whatsNew ? 'sparkle' : 'check');
     document.getElementById('btn-release-ok').textContent = t('releaseNotesGotIt');
@@ -9247,21 +9239,19 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         const banner = document.createElement('span');
         banner.className = 'update-banner';
         banner.id = 'update-banner-btn';
-        banner.textContent = lang === 'zh-TW'
-          ? `v${info.remote} 可更新（點我）` : `v${info.remote} available (click)`;
+        banner.textContent = tf('availableClick', {remote: info.remote});
         banner.addEventListener('click', async () => {
-          banner.textContent = lang === 'zh-TW' ? '更新中…' : 'Updating…';
+          banner.textContent = t('updating');
           try {
             const upd = JSON.parse(await pywebview.api.do_update());
             if (!upd.success) {
-              banner.textContent = (lang === 'zh-TW' ? '更新失敗：' : 'Failed: ')
-                + (upd.message || '');
+              banner.textContent = t('failedPrefix') + (upd.message || '');
               return;
             }
             if (upd.needs_restart) confirmRestart(upd.version || info.remote, true);
             else location.reload();
           } catch (e) {
-            banner.textContent = lang === 'zh-TW' ? '更新失敗' : 'Update failed';
+            banner.textContent = t('updateFailed');
           }
         });
         const spacer = document.querySelector('.tab-spacer');
@@ -9297,9 +9287,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       <div class="modal" style="width:360px;padding:20px">
         <h2 style="font-size:14px;margin-bottom:10px">${isZh ? '重啟 CLI 套用更新？' : 'Relaunch CLI to apply update?'}</h2>
         <div style="font-size:12px;color:#a9b1d6;line-height:1.6">
-          ${isZh
-            ? `會把「${esc(s.label)}」的 CLI 行程重開，套用 claude/codex 最新版，並用 --resume 接回目前的對話。<span style="color:#565f89">常駐行程不會自己換版，這是套用更新的方式。</span>`
-            : `Restarts the “${esc(s.label)}” CLI process to pick up the latest claude/codex build, resuming the current conversation.`}
+          ${tf('relaunchApplyHint', {label: esc(s.label)})}
         </div>
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
           <button class="btn btn-ghost" id="relaunch-cancel">${isZh ? '取消' : 'Cancel'}</button>

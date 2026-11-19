@@ -136,6 +136,7 @@ const $presets = document.getElementById('preset-list');
 const config = { presets: [] };
 const esc = (s) => { const d = document.createElement('div');
                      d.textContent = s == null ? '' : s; return d.innerHTML; };
+const t = (key) => key === 'presetDefault' ? '預設' : key;
 window.__opened = null;
 function openSession(cmd, name) { window.__opened = { cmd, name }; }
 function closeModal() { window.__closedModal = true; }
