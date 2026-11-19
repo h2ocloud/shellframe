@@ -1,0 +1,54 @@
+/* ShellBot icons (web/icons.js): the base rule, and the sizes of the spots drawn in index.html's own markup. The other
+   parts size their icons in their own css (bots.css, chat.css, entry.css, ...). The line is 1.5 px at any size. */
+.sfi { display: inline-block; width: 1.25em; height: 1.25em; vertical-align: -.25em; flex: none; overflow: visible;
+  fill: none; stroke: currentColor; stroke-width: 1.5px; stroke-linecap: round; stroke-linejoin: round; }
+.sfi * { vector-effect: non-scaling-stroke; }
+[data-sfi] { display: inline-flex; align-items: center; justify-content: center; }
+.sfi, .sfi * { pointer-events: none; }   /* a click lands on the button around an icon, never on the drawing */
+.sfi-lead { width: 1.2em; height: 1.2em; vertical-align: -.22em; }
+
+/* ── index.html's own markup ── */
+.tab-action .sfi { width: 17px; height: 17px; }
+#btn-mic .sfi { width: 18px; height: 18px; }
+#mic-fab #btn-mic-cancel .sfi { width: 13px; height: 13px; }
+#btn-refresh-status .sfi { width: 14px; height: 14px; }
+.sb-close .sfi, .close-tab .sfi { width: 11px; height: 11px; vertical-align: -1px; }
+.sb-relaunch .sfi { width: 13px; height: 13px; vertical-align: -2px; }
+.sb-gear .sfi { width: 15px; height: 15px; }
+.sb-footer-ico .sb-ico .sfi { width: 16px; height: 16px; }
+#paste-confirm-bar .sfi { width: 16px; height: 16px; vertical-align: -3px; }
+.sb-divider .sfi { width: 12px; height: 12px; vertical-align: -2px; }
+.sb-divider .sfi-s { width: 10px; height: 10px; }
+.sb-chev { display: inline-flex; color: #565f89; }
+.sb-chev .sfi { width: 10px; height: 10px; vertical-align: 0; }
+.sb-peer-head .sb-label .sfi-lead, .sb-mobile-head .sb-label .sfi-lead { width: 1.15em; height: 1.15em; }
+.sb-pair-btn .sfi { width: 11px; height: 11px; vertical-align: -1px; }
+.sb-mobile-addr .sfi { width: 12px; height: 12px; vertical-align: -2px; }
+.sb-remote-hint .sfi-lead { width: 11px; height: 11px; vertical-align: -2px; }
+.link-act .sfi { width: 12px; height: 12px; }
+#link-main-title .sfi-lead { width: 14px; height: 14px; vertical-align: -3px; }
+.link-msg .sfi-lead { width: 12px; height: 12px; vertical-align: -2px; }
+.pc-app-ico { display: inline-flex; }
+.pc-app-ico .sfi { width: 22px; height: 22px; vertical-align: 0; }
+.sx-h-ico .sfi { width: 1.15em; height: 1.15em; vertical-align: -.22em; }
+.sx-note-ico .sfi { width: 14px; height: 14px; vertical-align: -3px; }
+.sx-note-ico { display: inline-flex; vertical-align: middle; }
+#btn-stt-refresh .sfi, #btn-reload-ui .sfi { width: 13px; height: 13px; vertical-align: -2px; }
+.up-big-ok, .up-big-restart { display: flex; justify-content: center; margin-bottom: 8px; }
+.up-big-ok { color: #9ece6a; }
+.up-big-restart { color: #7aa2f7; }
+.up-big-ok .sfi, .up-big-restart .sfi { width: 36px; height: 36px; }
+.ub-arrow .sfi { width: 10px; height: 10px; vertical-align: -1px; }
+.ub-none .sfi { width: 12px; height: 12px; vertical-align: -2px; }
+.au-bad .sfi { width: 1.1em; height: 1.1em; vertical-align: -.2em; }
+#feed-overview .sfi { width: 1.15em; height: 1.15em; vertical-align: -.22em; }
+.attach-summary .sfi, .attach-chip .sfi { width: 13px; height: 13px; vertical-align: -2px; }
+.attach-chip .chip-close .sfi { width: 11px; height: 11px; vertical-align: -1px; }
+.close-img .sfi, .p-del .sfi { width: 12px; height: 12px; }
+.sp-grip .sfi { width: 14px; height: 14px; vertical-align: -3px; }
+.sp-del .sfi { width: 13px; height: 13px; vertical-align: -2px; }
+.sp-grip, .sp-del, .close-img, .p-del { display: inline-flex; align-items: center; justify-content: center; }
+.sx-pill .sfi, .sx-status .sfi { width: 10px; height: 10px; vertical-align: -1px; margin-right: 1px; }
+.bridge-toggle .sfi { width: 10px; height: 10px; vertical-align: -1px; }
+.sb-bridge .sfi { width: 9px; height: 9px; vertical-align: -1px; margin-right: 1px; }
+#api-server-status .sfi, #status-hooks-state .sfi { width: 10px; height: 10px; vertical-align: -1px; }
