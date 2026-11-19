@@ -6,7 +6,7 @@ Asked for in daily use, with two computers paired:
   a. the sidebar's Frame Link zone showed the other computer's primary bot with a face guessed here
      from its tab name (a yellow egg), while that computer shows it as a red star with the primary
      badge. Now each remote tab has the face that computer gives it (link_peer_bots, kept from its
-     GET /link/bots), its primary bot is marked (the face's badge and a "★ 主要" tag), a terminal
+     GET /link/bots), its primary bot is marked (the face's badge and a star 主要 tag), a terminal
      there is >_; a computer that says nothing keeps the old guess. An opened remote tab has the
      same face.
   b. the chat view's # finds the other computer's bots, awake and asleep (not its external ones),
@@ -119,7 +119,7 @@ FACE = """rsid => { const row = document.querySelector(`#sidebar-sessions .sb-re
   if (!row) return null; const svg = row.querySelector('.busy-dot svg.sfb'), term = row.querySelector('.busy-dot .sfb-term');
   return { shape: svg ? svg.dataset.shape : '', color: svg ? svg.style.getPropertyValue('--c').trim() : '',
            primary: !!(svg && svg.classList.contains('is-primary')), term: !!term,
-           tag: (row.querySelector('.sfb-peer-primary') || {}).textContent || '' }; }"""
+           tag: (row.querySelector('.sfb-peer-primary') || {}).textContent || '', star: !!row.querySelector('.sfb-peer-primary svg.sfi') }; }"""
 SHOWN = "(() => { const l = document.getElementById('chat-layer'); return l && !l.hidden; })()"
 ITEMS = """() => document.getElementById('chat-pick').hidden ? null :
   [...document.querySelectorAll('#chat-pick .cm-pick-item')].map(i => [i.querySelector('b').textContent, i.querySelector('.cm-pick-sub').textContent])"""
@@ -161,7 +161,7 @@ def run(browser, engine):
     red, teal = page.evaluate("[SFBots.PALETTE.red, SFBots.PALETTE.teal]")
     check("its primary bot: the red star it is over there", f1 and f1["shape"] == "star" and f1["color"] == red, f1)
     check("…with the primary badge on the face", f1 and f1["primary"], f1)
-    check("…and a ★ 主要 tag on the row", f1 and "★" in f1["tag"] and "主要" in f1["tag"], f1)
+    check("…and a star 主要 tag on the row (a drawn star, then the word)", f1 and f1["star"] and "主要" in f1["tag"], f1)
     guess = page.evaluate("SFBots.defaultAvatar('desk-b/週報')")
     check("another tab: the face that computer gives it, not the guess from its name",
           f2 and f2["shape"] == "cloud" and f2["color"] == teal and (guess["shape"], guess["color"]) != ("cloud", "teal"),
@@ -210,7 +210,8 @@ def run(browser, engine):
     check("this computer's tab first, then the other computer's bots, primary first",
           names == ["週報草稿", "總管 · desk-b", "研究-CLD · desk-b"], items)
     subs = dict(items)
-    check("…labelled: the primary marked, awake / asleep", subs.get("總管 · desk-b") == "★ 主要 · 醒著"
+    check("…labelled: the primary marked, awake / asleep", (subs.get("總管 · desk-b") or "").strip() == "主要 · 醒著"
+          and page.evaluate("document.querySelectorAll('#chat-pick .cm-pick-sub svg.sfi').length") == 1
           and subs.get("研究-CLD · desk-b") == "休息中，會叫醒", items)
     check("…with their faces from over there", page.evaluate(
         "[...document.querySelectorAll('#chat-pick .cm-pick-item')].slice(1).map(i => i.querySelector('svg').dataset.shape)")

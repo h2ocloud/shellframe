@@ -241,3 +241,15 @@
   .cn-segs i { width: 18px; }
   .cn-body { padding-left: 14px; padding-right: 14px; }
 }
+
+/* icons (web/icons.js) */
+.cn-big .sfi { width: 20px; height: 20px; vertical-align: 0; }
+.cn-x .sfi { width: 18px; height: 18px; vertical-align: -4px; }
+.cn-sc-x .sfi { width: 13px; height: 13px; vertical-align: -2px; }
+.cn-route-found .sfi-lead, .cg-found .sfi-lead { width: 1.1em; height: 1.1em; vertical-align: -.2em; }
+.cn-proto-mark .sfi { width: 14px; height: 14px; vertical-align: -3px; }
+.cn-proto.tone-ok .cn-proto-mark { color: var(--c-green); }
+.cn-proto.tone-warn .cn-proto-mark { color: var(--c-amber); }
+.cn-proto.tone-bad .cn-proto-mark { color: var(--c-red); }
+.cn-back .sfi { width: 20px; height: 20px; vertical-align: -5px; }
+.cn-link .sfi-lead { width: 12px; height: 12px; vertical-align: -2px; }

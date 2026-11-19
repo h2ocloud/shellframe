@@ -322,7 +322,7 @@
   // long name never hides it, and its click is not a click on the row (that switches tabs) or the sleeper (that wakes it).
   const editButton = role => `<button class="sfb-edit" data-sfb-edit="${esc(role)}" title="${esc(t(
     'Edit this bot: name, face, job, CLI, model, skills', '編輯這個 Bot：名字、頭像、執掌、CLI、模型、skill'))}" ` +
-    `aria-label="${esc(t('Edit bot', '編輯 Bot'))} ${esc(botName(role))}">✎</button>`;
+    `aria-label="${esc(t('Edit bot', '編輯 Bot'))} ${esc(botName(role))}">${SFIcons.html('edit')}</button>`;
   document.addEventListener('click', e => {
     const b = e.target.closest && e.target.closest('[data-sfb-edit]');
     if (!b || !enabled) return;
@@ -678,7 +678,7 @@
       if (!peerPrimary(row.dataset.pid, row.dataset.rsid) || row.querySelector('.sfb-peer-primary')) return;
       const tag = document.createElement('span');
       tag.className = 'sfb-tag sfb-peer-primary';
-      tag.textContent = '★ ' + t('Primary', '主要');
+      tag.innerHTML = SFIcons.html('star') + ' ' + esc(t('Primary', '主要'));
       const machine = (peers[row.dataset.pid] || {}).name || '';
       tag.title = t(`The primary bot on ${machine}`, `${machine} 的主要 Bot`);
       row.insertBefore(tag, row.querySelector('.sb-close'));
@@ -721,7 +721,7 @@
     const head = document.createElement('div');
     head.className = 'sfb-section';
     head.innerHTML = `<span>BOTS${roles.length ? t(' · asleep', ' · 休息中') : ''}</span>` +
-      `<button class="sfb-add" data-sfb="new" title="${esc(t('Create a bot with its own memory', '建立一個有自己記憶的 bot'))}">＋ Bot</button>`;
+      `<button class="sfb-add" data-sfb="new" title="${esc(t('Create a bot with its own memory', '建立一個有自己記憶的 bot'))}">${SFIcons.html('plus')} Bot</button>`;
     frag.appendChild(head);
     roles.forEach(role => {
       const e = rosterEntry(role);
@@ -760,7 +760,7 @@
       el.innerHTML = `<div class="sfb-card empty" data-sfb="new-primary" ${dropLabel} title="${esc(t(
         'The primary bot is the first stop for everyday work: it takes stock and hands work out',
         '主要 Bot 是日常任務的第一站，負責盤點與派工'))}">` +
-        `${t('＋ Create a primary bot', '＋ 建立主要 Bot')}<span class="sfb-card-sub">${t('or drag a bot here', '或把一個 bot 拖上來')}</span></div>`;
+        `${SFIcons.html('plus')} ${t('Create a primary bot', '建立主要 Bot')}<span class="sfb-card-sub">${t('or drag a bot here', '或把一個 bot 拖上來')}</span></div>`;
       return;
     }
     const e = rosterEntry(role);
@@ -772,9 +772,9 @@
       : (sid ? previewOf(sid) : t('asleep · click to wake', '休息中 · 點一下叫醒'));
     const active = sid && host() && host().active() === sid;
     const how = ext ? t('talk to it', '和它往來') : t('open its conversation', '打開它的對話');
-    const tg = ext ? '' : `<button class="sfb-card-tg" data-sfb="tg" title="${esc(t('Telegram for the primary bot', '主要 Bot 的 Telegram'))}">📱</button>`;
+    const tg = ext ? '' : `<button class="sfb-card-tg" data-sfb="tg" title="${esc(t('Telegram for the primary bot', '主要 Bot 的 Telegram'))}">${SFIcons.html('phone')}</button>`;
     const editBtn = `<button class="sfb-card-edit" data-sfb="edit" title="${esc(t(
-      'Edit this bot: name, face, job, CLI, model, skills', '編輯這個 Bot：名字、頭像、執掌、CLI、模型、skill'))}" aria-label="${esc(t('Edit bot', '編輯 Bot'))}">✎</button>`;
+      'Edit this bot: name, face, job, CLI, model, skills', '編輯這個 Bot：名字、頭像、執掌、CLI、模型、skill'))}" aria-label="${esc(t('Edit bot', '編輯 Bot'))}">${SFIcons.html('edit')}</button>`;
     el.innerHTML = `<div class="sfb-card${active ? ' active' : ''}" data-sfb="primary" ${dropLabel} ` +
       `title="${esc(t(`Click: ${how}. Drag into the list below: no longer primary`, `點一下：${how}。拖到下面的清單：不再當主要 Bot`))}">` +
       `<span class="sfb-avatar busy-dot ${cls}" style="--sfb-size:var(--sfb-size-card);cursor:pointer">` +
@@ -904,10 +904,10 @@
         const primary = st.primary === role;
         botPart = `<div class="sfb-botbox"><b>Bot · ${esc(botName(role))}</b>` +
           `<span>${esc(e.responsibility || t('(no job written yet)', '（還沒寫執掌）'))}</span>` +
-          `<span class="sfb-runs">${esc(runsLine(role))}${modelBad(role) ? ` <b class="sfb-warn-mark" title="${esc(modelBadWords(role))}">⚠</b>` : ''}</span>` +
+          `<span class="sfb-runs">${esc(runsLine(role))}${modelBad(role) ? ` <b class="sfb-warn-mark" title="${esc(modelBadWords(role))}">${SFIcons.html('warn')}</b>` : ''}</span>` +
           `<div class="sfb-row" style="margin-top:6px">` +
           `<button class="btn btn-ghost" data-act="edit">${t('Edit bot…', '編輯 Bot…')}</button>` +
-          (primary ? `<span class="sfb-chip">★ ${t('Primary bot', '主要 Bot')}</span>`
+          (primary ? `<span class="sfb-chip">${SFIcons.html('star')} ${t('Primary bot', '主要 Bot')}</span>`
                    : `<button class="btn btn-ghost" data-act="primary">${t('Make primary', '設為主要 Bot')}</button>`) +
           `<button class="btn btn-ghost" data-act="folder">${t('Memory folder', '記憶資料夾')}</button>` +
           `<button class="btn btn-ghost" data-act="unbot" title="${esc(t("This tab stops being the bot's tab; the bot and its memory stay",
@@ -997,8 +997,8 @@
   // Keep, a toast), so nobody has to hunt for it. All of it, name to skills, in any of these. (A click on a
   // face in the sidebar changes its light and a click on the card wakes the bot, so the words say right-click.)
   const whereWords = () => t(
-    'You can change all of this later: Edit on its row in the sidebar (the ✎ on the card for the primary bot), right-click its face, or open Settings → Bots.',
-    '之後都可以再改：側欄那一列的「編輯」（主要 Bot 在卡片的 ✎）、右鍵它的頭像，或到 設定 → Bots。');
+    'You can change all of this later: Edit on its row in the sidebar (the pencil on the card for the primary bot), right-click its face, or open Settings → Bots.',
+    '之後都可以再改：側欄那一列的「編輯」（主要 Bot 在卡片上的鉛筆）、右鍵它的頭像，或到 設定 → Bots。');
 
   // ── the model: picked from the CLI's own list ─────────────────────────────
   // The lists (and what each launch command can pin) come from Python (bots_model_info, built from
@@ -1122,13 +1122,13 @@
         try { res = JSON.parse(await api().bots_model_check(cmd, v)); } catch (_) { /* the server checks again on save */ }
         if (mine !== seq) return;                                 // a newer keystroke took over
         if (res.ok && res.hidden) {     // Codex's own menu keeps it off (models_cache.json): the account may refuse it
-          setNote('warn', `⚠ ${esc(t(`Codex no longer lists ${q(v)} in its own model menu: your account may refuse it. Pick one from the list.`,
+          setNote('warn', `${SFIcons.html('warn', { cls: 'sfi-note' })} ${esc(t(`Codex no longer lists ${q(v)} in its own model menu: your account may refuse it. Pick one from the list.`,
             `Codex 自己的模型選單已經不列${q(v)}，你的帳號可能不能用。請從清單選一個。`))} · <code>${esc(i.flag)} ${esc(v)}</code>`);
           return;
         }
-        if (res.ok) { setNote('ok', `✓ ${esc(t('ShellBot recognises this model', 'ShellBot 認得這個模型'))} · <code>${esc(i.flag)} ${esc(v)}</code>`); return; }
+        if (res.ok) { setNote('ok', `${SFIcons.html('check', { cls: 'sfi-note' })} ${esc(t('ShellBot recognises this model', 'ShellBot 認得這個模型'))} · <code>${esc(i.flag)} ${esc(v)}</code>`); return; }
         if (storedBad && v === storedBad.model && i.provider === storedBad.provider) {     // the bot's own old key: flagged, saving is not blocked
-          setNote('warn', `⚠ ${esc(t('This model may not take effect', '這個模型可能沒生效'))}: ${esc(modelWords(res, v, true))}${didYouMean(res.suggestion)}`);
+          setNote('warn', `${SFIcons.html('warn', { cls: 'sfi-note' })} ${esc(t('This model may not take effect', '這個模型可能沒生效'))}: ${esc(modelWords(res, v, true))}${didYouMean(res.suggestion)}`);
           return;
         }
         modelOk = false;
@@ -1275,9 +1275,9 @@
       const options = (shared || []).map(k => `<option value="${esc(k.name)}">${esc(k.name)}</option>`).join('');
       box.innerHTML = `<div class="sfb-own-list" id="sfb-own-list">${list}</div>` +
         `<div class="sfb-own-add"><input type="text" id="sfb-own-name" spellcheck="false" autocomplete="off" placeholder="${esc(t('Name of a new skill', '新 skill 的名字'))}">` +
-        `<button class="btn btn-ghost" data-own="new">${esc(t('＋ Blank', '＋ 空白'))}</button>` +
+        `<button class="btn btn-ghost" data-own="new">${SFIcons.html('plus') + ' ' + esc(t('Blank', '空白'))}</button>` +
         `<select id="sfb-own-from"><option value="">${esc(t('Copy a shared skill…', '從共用的複製…'))}</option>${options}</select>` +
-        `<button class="btn btn-ghost" data-own="copy">${esc(t('＋ Copy', '＋ 複製'))}</button>` +
+        `<button class="btn btn-ghost" data-own="copy">${SFIcons.html('plus') + ' ' + esc(t('Copy', '複製'))}</button>` +
         `<button class="btn btn-ghost" data-own="folder">${esc(t('Open skills folder', '開 skills 資料夾'))}</button></div>` +
         `<div class="hint">${esc(t(`Kept in ${dir}. Only this bot is told about them when it wakes; where a shared skill has the same name, its own is used. They follow the bot when it is renamed or moves to another CLI.`,
           `放在 ${dir}。只有這個 bot 叫醒時會被告知；跟共用 skill 同名時用它自己的。改名或換 CLI，它們都跟著走。`))}</div>`;
@@ -1439,7 +1439,7 @@
         <div id="sfb-tg-users"></div>
       </div>
       <div class="sfb-tg-opts">
-        <label><input type="checkbox" id="sfb-tg-home"> ${t('Messages from the phone go to ⭐ the primary bot (/home goes back to it)', '手機傳來的訊息預設給 ⭐ 主要 Bot（/home 隨時回到它）')}</label>
+        <label><input type="checkbox" id="sfb-tg-home"> ${t('Messages from the phone go to', '手機傳來的訊息預設給')} ${SFIcons.html('star', { cls: 'sfi-lead' })} ${t('the primary bot (/home goes back to it)', '主要 Bot（/home 隨時回到它）')}</label>
         <label><input type="checkbox" id="sfb-tg-quiet"> ${t('Quiet hours', '勿擾時段')}
           <input type="time" id="sfb-tg-from"> – <input type="time" id="sfb-tg-to">
           <span class="sfb-note">${t('only "needs your decision" is sent then', '期間只推「要你決定」')}</span></label>
@@ -1452,8 +1452,8 @@
     let s = {}, sig = '';
     function paint() {
       const conn = !!s.connected;
-      $('sfb-tg-state').innerHTML = conn ? `✅ ${t('Connected', '已連線')} <b>@${esc(s.bot)}</b>`
-        : (s.configured ? `⚠ ${t('Set up but not connected', '已設定，但沒有連上')}` : t('Not set up yet', '還沒設定'));
+      $('sfb-tg-state').innerHTML = conn ? `${SFIcons.html('check-circle', { cls: 'sfi-lead' })} ${t('Connected', '已連線')} <b>@${esc(s.bot)}</b>`
+        : (s.configured ? `${SFIcons.html('warn', { cls: 'sfi-lead' })} ${t('Set up but not connected', '已設定，但沒有連上')}` : t('Not set up yet', '還沒設定'));
       $('sfb-tg-token').hidden = conn;
       $('sfb-tg-bind').hidden = !conn;
       const p = s.pairing;
@@ -1472,7 +1472,7 @@
         ? `<p class="sfb-warn">${t('The allowlist is empty: anyone who finds this bot can drive this computer. After the first phone is bound, only bound people can.',
             '允許名單是空的：任何找到這個 bot 的人都能操作這台電腦。第一次綁定之後，就只剩綁定的人可以用。')}</p>`
         : `<p class="sfb-note">${t('Bound', '已綁定')}${t(': ', '：')}${(s.users_info || users.map(u => ({ id: u, label: String(u) }))).map(u =>
-            `<span class="sfb-chip">${esc(u.label)} <a href="#" data-act="unbind" data-id="${esc(u.id)}" title="${esc(t('Remove', '移除'))}">×</a></span>`).join(' ')}</p>`;
+            `<span class="sfb-chip">${esc(u.label)} <a href="#" data-act="unbind" data-id="${esc(u.id)}" title="${esc(t('Remove', '移除'))}" aria-label="${esc(t('Remove', '移除'))}">${SFIcons.html('close')}</a></span>`).join(' ')}</p>`;
       if (document.activeElement && ov.contains(document.activeElement) && document.activeElement.type === 'time') return;
       $('sfb-tg-home').checked = s.default_primary !== false;
       const q = s.quiet || {};
@@ -1579,11 +1579,11 @@
         return `<div class="sfb-bl-row" data-sfb-role="${esc(role)}">` +
           `<span class="sfb-avatar">${faceSvg(e.bot.avatar, { seed: role, primary: role === st.primary, asleep: !ext && !awake.has(role) })}</span>` +
           `<span class="sfb-bl-main"><span class="sfb-bl-name">${esc(botName(role))}` +
-          `${role === st.primary ? `<span class="sfb-chip">★ ${esc(t('Primary bot', '主要 Bot'))}</span>` : ''}` +
+          `${role === st.primary ? `<span class="sfb-chip">${SFIcons.html('star')} ${esc(t('Primary bot', '主要 Bot'))}</span>` : ''}` +
           `<span class="sfb-bl-state">${esc(state)}</span></span>` +
           `<span class="sfb-bl-sub">${esc(ext ? t('Reached through a webhook', '用 webhook 往來') : runsLine(role))}` +
           `${e.responsibility ? ' — ' + esc(e.responsibility) : ''}</span>` +
-          (!ext && modelBad(role) ? `<span class="sfb-bl-warn">⚠ ${esc(modelBadWords(role))}</span>` : '') + `</span>` +
+          (!ext && modelBad(role) ? `<span class="sfb-bl-warn">${SFIcons.html('warn', { cls: 'sfi-lead' })} ${esc(modelBadWords(role))}</span>` : '') + `</span>` +
           `<button class="btn btn-ghost sfb-bl-edit" data-sfb-edit="${esc(role)}">${esc(t('Edit', '編輯'))}</button></div>`;
       }).join('') : `<div class="sfb-bl-empty">${esc(t('No bots yet. Keep a conversation (the Keep button on its row) and it becomes one, or create one here.',
         '還沒有 bot。把一個對話「記住」（它那一列的按鈕）就會變成 bot，也可以在這裡建立。'))}</div>`);
@@ -1619,7 +1619,7 @@
     </div>`;
     const more = document.createElement('div');
     more.innerHTML = `<div id="sfb-settings-more" class="sx-bots-more">
-        <button class="btn btn-ghost" id="sfb-settings-new">${t('＋ Create a bot', '＋ 建立 Bot')}</button>
+        <button class="btn btn-ghost" id="sfb-settings-new">${SFIcons.html('plus')} ${t('Create a bot', '建立 Bot')}</button>
         <span id="sfb-settings-root"></span>
       </div>
       <div id="sfb-settings-list"></div>`;

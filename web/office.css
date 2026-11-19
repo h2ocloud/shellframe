@@ -15,3 +15,6 @@
 #sfo-overlay.sfo-board, #sfo-overlay.sfo-board .sfo-frame { background: transparent; }
 /* One more icon in the foot row (board): in the narrowest sidebar the icons give up width before the row spills sideways. */
 #sb-footer-row .sb-footer-btn.sb-footer-ico { flex: 0 1 28px; min-width: 18px; }
+
+/* icons (web/icons.js) */
+#sfo-overlay .sfo-close .sfi { width: 16px; height: 16px; vertical-align: 0; }

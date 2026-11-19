@@ -237,7 +237,11 @@ try:
     api._on_display_wake("system")
     check("screens + system 同時到只處理一次", len(calls) == 1, str(len(calls)))
     win2 = MagicMock()
-    api._window, api._display_woke_at, logs[:] = win2, 0.0, []
+    # The first wake's ack is still on the object. A new wake counts an ack only when it is stamped at or
+    # after the wake itself, and on Windows time.time() ticks in ~15 ms steps: the two stamps are then
+    # equal and the stale ack reads as an answer ("repainted 0ms after wake"). Clear it, as a real page
+    # that has stopped answering would leave it.
+    api._window, api._display_woke_at, api._wake_ack_at, logs[:] = win2, 0.0, 0.0, []
     api._on_display_wake("screens")
     check("頁面沒回應要留下紀錄", any("did not answer" in m for m in logs), str(logs))
 finally:

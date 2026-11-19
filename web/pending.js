@@ -329,7 +329,7 @@
     if (last.head !== headHtml) { last.head = headHtml; headN.innerHTML = headHtml; }
     const showD = !!SD() && (SD().hasRail() || dNew > 0), pillHtml = `${esc(t('Deliverables', '交付物'))}<b class="${dNew ? 'on' : ''}">${dNew > 99 ? '99+' : dNew}</b>`;
     if (last.pill !== pillHtml + showD) { last.pill = pillHtml + showD; pillD.innerHTML = pillHtml; pillD.hidden = !showD; }
-    panel.querySelector('.pend-x').textContent = docked ? '»' : '✕';
+    panel.querySelector('.pend-x').innerHTML = docked ? SFIcons.html('chev-right') : SFIcons.html('close');
     panel.querySelector('.pend-x').title = docked ? t('Fold to the edge', '收到邊邊') : t('Close (Esc)', '關閉（Esc）');
     if (armed && lastTotal === 0 && total > 0 && !open && !docked) { cap.classList.remove('pulse'); void cap.offsetWidth; cap.classList.add('pulse'); }   // 0 → something: one pulse, no sound
     lastTotal = total;

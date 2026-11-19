@@ -225,22 +225,28 @@ print("\nrestart: the new instance never runs on a console window (v0.41.2)")
 # window. Closing that window, or Ctrl+C / Ctrl+Break in it, ended the app at once with
 # nothing in any log.
 D, P, PN = W.DETACHED_PROCESS, W.CREATE_NEW_PROCESS_GROUP, W.CREATE_NO_WINDOW
+# win_instance joins with os.path (ntpath on Windows: "/u/.venv/Scripts" + "pythonw.exe" is
+# "/u/.venv/Scripts\\pythonw.exe"), and asks `exists` about that string. So the expected paths are built
+# with os.path.join too, and the stub compares the way a file system does: normalized, not as written.
+J = os.path.join
 venv, home, app = "/u/.venv/Scripts", "/u", "/u/.local/apps/shellframe"
-have = lambda *paths: (lambda p: p in paths)
-argv, flags, what = W.relaunch(app, f"{venv}/python.exe", home, have(f"{venv}/pythonw.exe"))
-check("the venv's pythonw.exe beside python.exe, detached", argv == [f"{venv}/pythonw.exe", f"{app}/main.py"]
+PYW, PY, VBS, MAIN = J(venv, "pythonw.exe"), f"{venv}/python.exe", J(home, ".local", "bin", "shellframe.vbs"), J(app, "main.py")
+_same = lambda p: os.path.normcase(os.path.normpath(p))
+have = lambda *paths: (lambda p: _same(p) in {_same(x) for x in paths})
+argv, flags, what = W.relaunch(app, PY, home, have(PYW))
+check("the venv's pythonw.exe beside python.exe, detached", argv == [PYW, MAIN]
       and flags == D | P and what == "pythonw.exe", (argv, flags, what))
-argv, flags, what = W.relaunch(app, f"{venv}/pythonw.exe", home, have(f"{venv}/pythonw.exe"))
-check("already pythonw.exe: the same", argv[0] == f"{venv}/pythonw.exe")
-argv, flags, what = W.relaunch(app, f"{venv}/python.exe", home, have(f"{home}/.local/bin/shellframe.vbs"))
+argv, flags, what = W.relaunch(app, PYW, home, have(PYW))
+check("already pythonw.exe: the same", argv == [PYW, MAIN] and what == "pythonw.exe", (argv, what))
+argv, flags, what = W.relaunch(app, PY, home, have(VBS))
 check("no pythonw.exe: shellframe.vbs through wscript (it runs pythonw)",
-      argv == ["wscript.exe", f"{home}/.local/bin/shellframe.vbs"] and flags == D | P, (argv, flags))
-argv, flags, what = W.relaunch(app, f"{venv}/python.exe", home, have())
-check("neither: python.exe with no console window", argv == [f"{venv}/python.exe", f"{app}/main.py"]
+      argv == ["wscript.exe", VBS] and flags == D | P, (argv, flags))
+argv, flags, what = W.relaunch(app, PY, home, have())
+check("neither: python.exe with no console window", argv == [PY, MAIN]
       and flags & PN and not flags & D, (argv, hex(flags)))
 every = [W.relaunch(app, f"{venv}/{exe}", home, have(*found))[0]
          for exe in ("python.exe", "pythonw.exe")
-         for found in ((), (f"{venv}/pythonw.exe",), (f"{home}/.local/bin/shellframe.vbs",))]
+         for found in ((), (PYW,), (VBS,))]
 check("never cmd, start or a .bat", not any(a in ("cmd", "start", "/c") or str(a).lower().endswith(".bat")
                                             for argv in every for a in argv), every)
 src = (Path(__file__).parent / "api_update.py").read_text(encoding="utf-8")

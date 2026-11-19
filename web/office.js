@@ -775,7 +775,7 @@
     overlay.setAttribute('aria-label', nm);
     if (bo) overlay.classList.add('sfo-board');
     overlay.innerHTML = `<iframe class="sfo-frame" src="office.html" title="${nm}"></iframe>` +
-      (bo ? '' : `<button class="sfo-close" type="button" aria-label="${t('Close the office (Esc)', '關閉辦公室（Esc）')}" title="${t('Close (Esc)', '關閉（Esc）')}">✕</button>`);
+      (bo ? '' : `<button class="sfo-close" type="button" aria-label="${t('Close the office (Esc)', '關閉辦公室（Esc）')}" title="${t('Close (Esc)', '關閉（Esc）')}">${SFIcons.html('close')}</button>`);
     document.body.appendChild(overlay);
     frame = overlay.querySelector('iframe');
     const x = overlay.querySelector('.sfo-close');

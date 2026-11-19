@@ -56,6 +56,7 @@ PAGE = """<!doctype html><meta charset="utf-8">
 <style>body{margin:0;background:#16161e}#terminal-wrap{position:relative;width:900px;height:640px}
 .term-pane{position:absolute;inset:0;overflow:hidden}</style>
 <div id="terminal-wrap"><div class="term-pane" id="pane"></div></div>
+<script>__ICONS__</script>
 <script>
 const HIST = __HIST__;
 window.__log = []; window.__FETCH_MS = 600;
@@ -86,7 +87,7 @@ window.isOpen = () => !!document.querySelector('.scroll-history-overlay');
 window.reset = () => { try { ScrollHistory.close(); } catch (_) {} window.__log.length = 0; };
 window.ready = true;
 </script>"""
-SRC = (PAGE.replace("__HIST__", json.dumps(HIST)).replace("__THEME__", THEME)
+SRC = (PAGE.replace("__ICONS__", (HERE / "web/icons.js").read_text(encoding="utf-8")).replace("__HIST__", json.dumps(HIST)).replace("__THEME__", THEME)
        .replace("__SCROLL__", SCROLL).replace("__FETCH__", FETCH).replace("__SETUP__", SETUP))
 
 passed = failed = 0

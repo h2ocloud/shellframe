@@ -260,7 +260,7 @@ def run(browser, engine):
           and "one turn" in page.inner_text("#sfb-memsave") and "quota" in page.inner_text("#sfb-memsave"), page.inner_text("#sfb-memsave"))
     open_editor(page, "助理")
     body = page.inner_text("#sfb-ed-own")
-    check("the Skills cell in English", "Open folder" in body and "＋ Blank" in body and "replaces the shared one" in body
+    check("the Skills cell in English", "Open folder" in body and "Blank" in body and "Copy" in body and "replaces the shared one" in body
           and "follow the bot when it is renamed" in body, body)
     page.click('#sfb-ed-own .sfb-own-row[data-folder="daily-notes"] [data-own="delete"]')
     page.wait_for_selector(".sf-dialog .sf-dialog-msg")

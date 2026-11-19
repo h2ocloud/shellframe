@@ -30,7 +30,7 @@
 
   function notesHtml(s) {
     return (s.notes || []).map(n =>
-      `<div class="sched-note" title="${esc(pick(n.tip))}">⚠ ${esc(pick(n.text))}</div>`).join('');
+      `<div class="sched-note" title="${esc(pick(n.tip))}">${SFIcons.html('warn', { cls: 'sfi-lead' })} ${esc(pick(n.text))}</div>`).join('');
   }
 
   function memberHtml(m, showDate) {

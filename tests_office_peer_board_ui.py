@@ -162,10 +162,10 @@ def run(browser, base, engine):
     check("…and the others sit at the other seats", all(x and x.startswith("p:pid-a:") and x != "p:pid-a:0" for x in seats) and seats[0] != seats[1], seats)
     fr.evaluate("__office.follow('p:pid-a/builder')")
     page.wait_for_timeout(400)
-    check("its name has the ★ 主要 tag in the panel", "★ 主要" in fr.evaluate("document.getElementById('pName').innerText"))
+    check("its name has the star 主要 tag in the panel", "主要" in fr.evaluate("document.getElementById('pName').innerText") and fr.evaluate("!!document.querySelector('#pName .star svg.sfi')"))
     fr.evaluate("__office.follow('p:pid-a/asker')")
     page.wait_for_timeout(400)
-    check("…and another bot's name does not", "★" not in fr.evaluate("document.getElementById('pName').innerText"))
+    check("…and another bot's name does not", "主要" not in fr.evaluate("document.getElementById('pName').innerText") and fr.evaluate("!document.querySelector('#pName .star')"))
     fr.evaluate("__office.unfollow()")
     check("computer B has no primary: no main bot, nobody at a big desk", fr.evaluate("__office.peerMain('pid-b')") is None
           and fr.evaluate("__office.entScale('p:pid-b/solo')") < 1.25)

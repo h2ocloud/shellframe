@@ -129,6 +129,8 @@ PAGE = """<!doctype html><meta charset="utf-8">
   <h2 style="font-size:15px;color:#c0caf5;margin:0 0 12px">新增工作階段</h2>
   <div class="preset-list" id="preset-list"></div>
 </div>
+<link rel="stylesheet" href="web/icons.css">
+<script src="web/icons.js"></script>
 <script>
 const $presets = document.getElementById('preset-list');
 const config = { presets: [] };

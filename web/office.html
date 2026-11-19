@@ -232,7 +232,12 @@ body.embedded #top{padding-right:calc(58px / var(--ui))}   /* ShellBot's close b
 .cm-peer b{color:var(--purple);font-weight:600}
 .cm-peer em{font-style:normal;color:var(--mute)}
 .cm-tools,.cm-note{align-self:flex-start;font-size:11.5px;color:var(--mute);padding:0 4px}
-.cm-tools .cbody::before{content:"⚙ ";opacity:.7}
+.cm-tools .cbody::before{content:"";display:inline-block;width:1.15em;height:1.15em;margin-right:.35em;vertical-align:-.22em;opacity:.7;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10.42 4.87L10.65 2.39L13.35 2.39L13.58 4.87L15.92 5.84L17.84 4.25L19.75 6.16L18.16 8.08L19.13 10.42L21.61 10.65L21.61 13.35L19.13 13.58L18.16 15.92L19.75 17.84L17.84 19.75L15.92 18.16L13.58 19.13L13.35 21.61L10.65 21.61L10.42 19.13L8.08 18.16L6.16 19.75L4.25 17.84L5.84 15.92L4.87 13.58L2.39 13.35L2.39 10.65L4.87 10.42L5.84 8.08L4.25 6.16L6.16 4.25L8.08 5.84z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10.42 4.87L10.65 2.39L13.35 2.39L13.58 4.87L15.92 5.84L17.84 4.25L19.75 6.16L18.16 8.08L19.13 10.42L21.61 10.65L21.61 13.35L19.13 13.58L18.16 15.92L19.75 17.84L17.84 19.75L15.92 18.16L13.58 19.13L13.35 21.61L10.65 21.61L10.42 19.13L8.08 18.16L6.16 19.75L4.25 17.84L5.84 15.92L4.87 13.58L2.39 13.35L2.39 10.65L4.87 10.42L5.84 8.08L4.25 6.16L6.16 4.25L8.08 5.84z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E") center/contain no-repeat}   /* the settings icon, as a mask: a pseudo-element cannot hold markup */
+.tb .sfi{width:15px;height:15px}
+.vx .sfi,.wx .sfi{width:14px;height:14px}
+.cfile button .sfi{width:11px;height:11px;vertical-align:-1px}
+.pname .star .sfi{width:.95em;height:.95em;vertical-align:-.14em}
+.cnav button .sfi{width:14px;height:14px;vertical-align:-2px}
 .cm-error{align-self:flex-start;font-size:12px;color:var(--red);padding:0 4px}
 .cm-bot p,.cm-bot blockquote,.cm-bot .cm-li{margin:.25em 0}
 .cm-bot p:first-child{margin-top:0}
@@ -630,6 +635,7 @@ body.searching #top.f-search #qres{left:0;right:0;width:auto}
   body.following #legend{opacity:0;pointer-events:none}
 }
 </style>
+<link rel="stylesheet" href="icons.css"/>
 <link rel="stylesheet" href="office_objects.css">
 </head>
 <body>
@@ -657,8 +663,8 @@ body.searching #top.f-search #qres{left:0;right:0;width:auto}
     <label class="sel" id="zoningWrap" title="正職怎麼分區（每一區是一間有牆的房間）"><select id="zoning" aria-label="怎麼分區">
       <option value="cli">分區：依 AI</option><option value="custom">分區：自訂分組</option><option value="none">分區：不分區</option></select></label>
     <label class="sel" id="areaWrap" title="看哪一區"><select id="area" aria-label="看哪一區"></select></label>
-    <button class="tb add" id="addOne" title="示範：加一位隨機團隊的正職">＋ 新增正職</button>
-    <button class="tb" id="addTen" title="示範：一次加 10 位">＋10</button>
+    <button class="tb add" id="addOne" title="示範：加一位隨機團隊的正職"><i data-sfi="plus"></i><span class="tx">新增正職</span></button>
+    <button class="tb" id="addTen" title="示範：一次加 10 位"><i data-sfi="plus"></i><span>10</span></button>
     <div class="seg" id="mode" role="group" aria-label="顯示方式">
       <button data-m="flat" aria-pressed="false">平面</button>
       <button data-m="iso" aria-pressed="true">立體</button>
@@ -683,12 +689,12 @@ body.searching #top.f-search #qres{left:0;right:0;width:auto}
 </section>
 
 <div id="tools">
-  <button class="tb acc" id="demoHandoff" title="立刻演一次交辦">▶ 交辦示範</button>
+  <button class="tb acc" id="demoHandoff" title="立刻演一次交辦"><i data-sfi="play"></i><span>交辦示範</span></button>
   <button class="tb" id="openBoard" title="任務看板：大廳牆上的白板，記著大家手上的事" aria-label="任務看板">看板</button>
   <button class="tb" id="openCal" title="排程：大廳牆上的日曆，對話裡的 /loop 和這台電腦的排程" aria-label="排程">排程</button>
   <button class="tb" id="resetSeats" hidden title="清掉拖曳換過的位子，回到規則排法">還原座位</button>
-  <button class="tb" id="zoomOut" title="縮小" aria-label="縮小">−</button>
-  <button class="tb" id="zoomIn" title="放大" aria-label="放大">＋</button>
+  <button class="tb" id="zoomOut" title="縮小" aria-label="縮小"><i data-sfi="minus"></i></button>
+  <button class="tb" id="zoomIn" title="放大" aria-label="放大"><i data-sfi="plus"></i></button>
   <button class="tb" id="fitAll" title="看整層">全景</button>
 </div>
 
@@ -727,7 +733,7 @@ body.searching #top.f-search #qres{left:0;right:0;width:auto}
 </aside>
 <div id="wall" hidden role="dialog" aria-modal="true" aria-labelledby="vTitle">
   <section class="wbox" id="wBox">
-    <div class="vhead"><span class="vic" id="vIcon" aria-hidden="true"></span><div class="vt"><h2 id="vTitle"></h2><p id="vSub"></p></div><span class="vhx" id="vHeadX"></span><button class="vx" id="vClose" type="button" title="關起來（Esc）" aria-label="關起來">✕</button></div>
+    <div class="vhead"><span class="vic" id="vIcon" aria-hidden="true"></span><div class="vt"><h2 id="vTitle"></h2><p id="vSub"></p></div><span class="vhx" id="vHeadX"></span><button class="vx" id="vClose" type="button" title="關起來（Esc）" aria-label="關起來"><i data-sfi="close"></i></button></div>
     <div class="vbody" id="vBody"></div>
     <div class="wover" id="vOver" hidden></div>
     <div class="wtray" id="wTray" aria-hidden="true"><svg viewBox="0 0 330 34" xmlns="http://www.w3.org/2000/svg"><g transform="translate(2 17) rotate(-3)"><rect width="92" height="14" rx="6" fill="#f4f5f7" stroke="#8d93a0" stroke-width="1"/><rect x="0" width="26" height="14" rx="6" fill="#1f4aa8"/><rect x="74" y="2" width="18" height="10" rx="4" fill="#dfe3ea"/><rect x="92" y="4" width="6" height="6" rx="2" fill="#1f4aa8"/></g><g transform="translate(112 16) rotate(2)"><rect width="92" height="14" rx="6" fill="#f4f5f7" stroke="#8d93a0" stroke-width="1"/><rect x="0" width="26" height="14" rx="6" fill="#c4283a"/><rect x="74" y="2" width="18" height="10" rx="4" fill="#dfe3ea"/><rect x="92" y="4" width="6" height="6" rx="2" fill="#c4283a"/></g><g transform="translate(222 17) rotate(-1)"><rect width="92" height="14" rx="6" fill="#f4f5f7" stroke="#8d93a0" stroke-width="1"/><rect x="0" width="26" height="14" rx="6" fill="#2b3042"/><rect x="74" y="2" width="18" height="10" rx="4" fill="#dfe3ea"/><rect x="92" y="4" width="6" height="6" rx="2" fill="#2b3042"/></g></svg><svg class="er" viewBox="0 0 80 34" xmlns="http://www.w3.org/2000/svg"><g transform="translate(4 6) rotate(-2)"><rect width="70" height="22" rx="4" fill="#e8e1cc" stroke="#9a937c"/><rect width="70" height="13" rx="4" fill="#4f6a94"/><rect y="9" width="70" height="4" fill="#4f6a94"/></g></svg></div>
@@ -736,6 +742,7 @@ body.searching #top.f-search #qres{left:0;right:0;width:auto}
 </div>
 <div id="toast" aria-live="polite"></div>
 
+<script src="icons.js"></script>
 <script src="deliv_draw.js"></script>
 <script src="office_objects.js"></script>
 <script>
@@ -1703,7 +1710,7 @@ function renderPanel(force) {
   if (!force && sig === panelSig) return; panelSig = sig;
   const w = e.who, stt = ST[e.st] || ST.idle, temp = e.kind === 'temp' || e.kind === 'peertemp', peer = e.kind === 'peer' || e.kind === 'peertemp', movable = e.kind === 'bot' && e.id !== M.primaryId;
   $('#pAv').src = avatarURL(w, 100);
-  $('#pName').innerHTML = esc(w.name) + ((e.kind === 'bot' && e.id === M.primaryId) || isPeerMain(e) ? ' <span class="star" title="主要 bot">★ 主要</span>' : '');
+  $('#pName').innerHTML = esc(w.name) + ((e.kind === 'bot' && e.id === M.primaryId) || isPeerMain(e) ? ` <span class="star" title="主要 bot">${SFIcons.html('star')} 主要</span>` : '');
   $('#pSub').textContent = temp ? `實習生 · ${w.cli}${peer ? ' · 隔壁' : ''}` : peer ? '正職 · ' + (roomOfEnt(e) || {}).label : `正職 · ${seatLabel(e)}`;
   const chip = $('#pChip'); chip.textContent = stt.label; chip.style.setProperty('--c', stt.c);
   const ll = loopLine(e.loop), pl = $('#pLoop'); pl.hidden = !ll; pl.innerHTML = ll ? `<span>排程：</span>${esc(ll)}` : '';
@@ -1861,7 +1868,7 @@ function renderFiles() {
   const el = $('#cFiles'), files = (chat.key && attached.get(chat.key)) || [];
   el.hidden = !files.length;
   el.innerHTML = files.map((f, i) => `<span class="cfile" title="${esc(f.path)}">${f.url ? `<img src="${esc(f.url)}" alt="">` : ''}<span>${esc(f.name)}</span>` +
-    `<button type="button" data-act="unattach" data-i="${i}" title="拿掉" aria-label="拿掉 ${esc(f.name)}">×</button></span>`).join('');
+    `<button type="button" data-act="unattach" data-i="${i}" title="拿掉" aria-label="拿掉 ${esc(f.name)}">${SFIcons.html('close')}</button></span>`).join('');
 }
 const readDataUrl = blob => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => no(r.error); r.readAsDataURL(blob); });
 async function chatPaste(ev) {
@@ -2201,7 +2208,7 @@ function cardHtml(t, r, now) {
     : '<li><span></span><span class="none">還沒有紀錄。</span></li>') + '</ol>';
   const dash = '<span class="dash">—</span>';
   return `<div class="wcard nt p${r.p}" role="dialog" aria-modal="true" aria-label="任務 #${t.id}">` +
-    `<div class="nh"><span class="nid">#${t.id}</span><span class="why">${esc(whyText(r.why))}</span><span class="st">${ST_ZH[t.status] || esc(t.status)}</span><button type="button" class="wx" data-act="dclose" title="收起來（Esc）" aria-label="收起來">✕</button></div>` +
+    `<div class="nh"><span class="nid">#${t.id}</span><span class="why">${esc(whyText(r.why))}</span><span class="st">${ST_ZH[t.status] || esc(t.status)}</span><button type="button" class="wx" data-act="dclose" title="收起來（Esc）" aria-label="收起來">${SFIcons.html('close')}</button></div>` +
     `<h4 class="wt">${esc(t.title || '（沒有標題）')}</h4>` +
     `<dl class="tm"><dt>負責</dt><dd>${whoBtn(t.owner_key, t.owner)}</dd><dt>交辦自</dt><dd>${whoBtn(t.requester_key, t.requester)}</dd><dt>在等</dt><dd>${t.waiting_on ? whoBtn(t.waiting_key, t.waiting_on) : dash}</dd>` +
     `<dt>下一步</dt><dd>${esc(t.next_step || '—')}</dd><dt>期限</dt><dd>${dueHtml(t, now, true)}</dd><dt>動靜</dt><dd>${ageHtml(t)}</dd>${delivRow(t)}</dl>` +
@@ -2438,8 +2445,8 @@ function calRangeLabel() {
 }
 function calHead() {
   const seg = [['day', '日'], ['week', '週'], ['month', '月']].map(([m, t]) => `<button type="button" data-act="cmode" data-m="${m}" aria-pressed="${CAL.mode === m}">${t}</button>`).join('');
-  return `<div class="cseg" role="group" aria-label="日曆範圍">${seg}</div><div class="cnav"><button type="button" data-act="cnav" data-d="-1" aria-label="上一個" title="上一個">‹</button>` +
-    `<button type="button" data-act="ctoday">今天</button><button type="button" data-act="cnav" data-d="1" aria-label="下一個" title="下一個">›</button></div><span class="crange" id="calRange">${esc(calRangeLabel())}</span>`;
+  return `<div class="cseg" role="group" aria-label="日曆範圍">${seg}</div><div class="cnav"><button type="button" data-act="cnav" data-d="-1" aria-label="上一個" title="上一個">${SFIcons.html('chev-left')}</button>` +
+    `<button type="button" data-act="ctoday">今天</button><button type="button" data-act="cnav" data-d="1" aria-label="下一個" title="下一個">${SFIcons.html('chev-right')}</button></div><span class="crange" id="calRange">${esc(calRangeLabel())}</span>`;
 }
 function calChip(it) {
   const e = it.e, p = CAL.pend.get(e.id), when = it.band ? it.label : hmOf(it.m) + (it.n > 1 ? ` ×${it.n}` : '');
@@ -2593,7 +2600,7 @@ function calPopHtml(e) {
   const busy = CAL.busy === e.id, ptxt = C.pend ? calPendText(e, C.pend) : '';
   const swOn = C.sw.on, swTxt = C.sw.mode === 'ask' ? '執行中' : swOn ? '啟用中' : '已停用';
   return `<div class="cp" role="dialog" aria-label="${esc(e.title)}"><div class="cph"><span class="tag ${e.off ? 'off' : 'c-' + e.cls}">${esc(calSrcName(e))}</span><h3>${esc(e.title)}</h3>` +
-    `<button type="button" class="vx" data-act="cpx" title="關起來（Esc）" aria-label="關起來細節">✕</button></div>` +
+    `<button type="button" class="vx" data-act="cpx" title="關起來（Esc）" aria-label="關起來細節">${SFIcons.html('close')}</button></div>` +
     `<dl class="cpd"><dt>負責</dt><dd>${who}</dd><dt>頻率</dt><dd>${esc(words || '—')}${e.est ? ' <span class="estag">預估</span>' : ''}${e.off ? ' <span class="estag">已停用</span>' : ''}</dd>` +
     `<dt>下一次</dt><dd>${esc(nx.text)}${nx.ts ? ` <span class="cd" data-ts="${nx.ts}" data-st="">${esc(cdText(nx.ts, ''))}</span>` : ''}</dd></dl>` +
     (ptxt ? `<p class="cpb${C.stale ? ' stale' : ''}" role="status">${esc(ptxt)}</p>` : '') + (CAL.msg && CAL.pop === e.id ? `<p class="cpm" role="status">${esc(CAL.msg)}</p>` : '') +
@@ -3085,7 +3092,7 @@ function setMode(m, instant) {
 function placeControls() { // 手機：區域、新增按鈕移到底部工具列
   const mob = innerWidth <= 720, tools = $('#tools'), right = $('#topRight');
   for (const id of ['zoningWrap', 'areaWrap', 'addOne', 'addTen']) { const el = $('#' + id); if (mob && el.parentNode !== tools) tools.insertBefore(el, $('#zoomOut')); else if (!mob && el.parentNode !== right) right.insertBefore(el, $('#mode')); }
-  $('#addOne').textContent = mob ? '＋新增' : '＋ 新增正職';
+  $('#addOne .tx').textContent = mob ? '新增' : '新增正職';
 }
 /* 頂部列與圖例：量了放不下才收。整列跟著 --ui 縮放，視窗寬度的斷點算不準（1027px 的視窗在「大」只有 870px 的空間）。
    一級一級試（每級都是完整的一組 class），第一個不擠的就用；最後一級就算還擠也留著。 */

@@ -6,6 +6,52 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.59.1 (2026-11-19)
+
+### Changes
+
+- **Line icons instead of emoji.**
+  Asked for: emoji used as icons looked cheap and did not match each other. Every emoji and symbol used as an icon in
+  the window is now one set of thin-line icons (inline SVG, drawn in the text colour, so hover and the theme apply).
+  This covers Bots, 辦公室 and 看板 at the top of the sidebar, the microphone (idle, recording and floating), the
+  intro cards, the sidebar foot, Settings, the tab bar (Loops included), the office's tool bar, and close, edit,
+  star, refresh and warning marks. Sentences that named an icon by its emoji were reworded. Text sent to bots,
+  Telegram or LINE, the office's drawn people and furniture, bot avatars and the presets' own icons are unchanged.
+  Covered by `tests_icons.py` (every icon used exists, no colour emoji left outside a short list of protocol
+  strings); the layout tests check that the top row and the foot still show their words at the default width.
+
+  **圖示改成線條，不再用 emoji。** 需求：拿 emoji 當圖示沒質感，彼此也不搭。現在視窗裡所有當圖示用的 emoji 和符號都換成同一
+  套細線條圖示（內嵌 SVG，跟著文字顏色，所以 hover 和主題都會套用），包括側欄最上面的 Bots、辦公室、看板，麥克風（平常、
+  錄音中、浮動的），介紹卡，側欄底部，設定，分頁列（含 Loops），辦公室的工具列，以及關閉、編輯、星號、重新整理、警示這些
+  記號。提到 emoji 的句子也改了寫法。送給 bot、Telegram、LINE 的字，辦公室畫出來的人和家具，bot 頭像，預設指令自己的圖示，
+  都沒有改。由 `tests_icons.py` 守著（用到的圖示都存在，除了少數協定字之外不再有彩色 emoji）；版面測試確認預設寬度下，
+  側欄最上面一排和底部仍然顯示文字。
+
+### Fixes
+
+- **A Claude tab started inside a shell (`zsh -lc 'claude …'`) keeps its conversation across a restart.**
+  ShellBot added `--session-id` after the closing quote, so the shell took it as its own argument, Claude started
+  without it, and the tab recorded an id it never had: a restart could not find its conversation. The id now goes
+  inside the quotes, and on a restart `--resume` does too. A script that is not a single plain Claude command at
+  its end (a pipe, `&&` after it, a redirect, a nested shell) gets no id, so nothing wrong is recorded and the
+  conversation is found from its transcript as before. Covered by `tests_session_id_only_claude.py`.
+
+  **在 shell 裡開的 Claude 分頁（`zsh -lc 'claude …'`）重開後會接回原本的對話。** 以前 ShellBot 把 `--session-id` 加在
+  引號外面，shell 當成自己的參數吃掉，Claude 沒收到，分頁卻記下這個編號，重開時找不到對話。現在編號放進引號裡，重開時的
+  `--resume` 也一樣。如果引號裡不是單純以 Claude 結尾（有管線、後面還有 `&&`、轉向、又包一層 shell），就不加編號，不會
+  記錯，照舊從對話紀錄找回。由 `tests_session_id_only_claude.py` 守著。
+
+### Internal
+
+- Two Windows tests failed on a real Windows machine, though not on macOS. `tests_win_restart_race.py` compared
+  POSIX-style paths with the ones the code builds with Windows path rules. `tests_restore_resilience.py` relied on
+  two clock readings differing, which the Windows clock (about 15.6 ms steps) does not guarantee. Both tests now
+  build their expectations the way the code does, and pass on macOS and on Windows 11.
+
+  兩支測試在 Windows 實機上會失敗（macOS 不會）：`tests_win_restart_race.py` 拿 POSIX 寫法的路徑去比程式用 Windows 規則組出來
+  的路徑；`tests_restore_resilience.py` 假設兩次讀時間一定不同，但 Windows 的時鐘大約 15.6 毫秒才跳一次。兩支測試改成照程式的
+  方式算預期值，在 macOS 和 Windows 11 上都會過。
+
 ## v0.59.0 (2026-11-19)
 
 ### Fixes
