@@ -41,6 +41,8 @@ CHIP = CHIP.group(0)
 
 PAGE = """<!doctype html><meta charset="utf-8">
 <style>__STYLE__</style>
+<link rel="stylesheet" href="web/icons.css">
+<script src="web/icons.js"></script>
 <div id="tab-bar">
   <button class="tab-action" id="btn-sidebar" style="font-size:14px">☰</button>
   <div id="tabs"></div>
@@ -112,7 +114,7 @@ try:
         text = chip.inner_text()
         check("chip 帶對方機器名", "mba" in text, text)
         check("chip 帶對方分頁名", "claude" in text, text)
-        check("chip 有遠端圖示", "⇄" in text, text)
+        check("chip 有遠端圖示（兩條橫箭頭的 SVG）", chip.locator(".icon svg.sfi").count() == 1, text)
 
         local = page.locator(".tab.active:not(.tab-remote)").first
         cs = page.evaluate("""() => {

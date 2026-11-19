@@ -67,6 +67,8 @@ PAGE = """<!doctype html><meta charset="utf-8">
   __STYLE__
 </style>
 <button id="usage-brief" title="" style="display:none"></button>
+<link rel="stylesheet" href="web/icons.css">
+<script src="web/icons.js"></script>
 <script>
 window.__errors = [];
 window.onerror = (m) => { window.__errors.push(String(m)); };
@@ -101,7 +103,7 @@ try:
         check("膠囊有 wk 標籤", "wk" in text, text)
         check("配速顯示應累積 71%", "71%" in text, text)
         check("膠囊有 pc 標籤", "pc" in text, text)
-        check("落後配速用向下箭頭", "▼" in text, text)
+        check("落後配速用向下箭頭（畫出來的圖示，不是字元）", page.evaluate("(document.querySelector('#usage-brief .ub-arrow svg path') || document.body).getAttribute('d') === 'M6 9.5l6 6 6-6'"), text)
         check("沒有編出 5h 窗口", "5h" not in text, text)
         check("tooltip 有帳號與每週配速",
               "user@example.com" in title and "每週配速" in title and "落後" in title, title)

@@ -70,6 +70,8 @@ PAGE = """<!doctype html><meta charset="utf-8">
   <div id="fake-term">（假終端區：面板開合會壓縮這塊高度）</div>
 __PANEL__
 </div>
+<link rel="stylesheet" href="web/icons.css">
+<script src="web/icons.js"></script>
 <script>
 window.__fits = 0;
 let linkView = null;

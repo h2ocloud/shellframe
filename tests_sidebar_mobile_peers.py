@@ -5,9 +5,9 @@ Reported: paired phones and tablets filled the sidebar, each with Message / File
 waiting for it to poll", though a phone or a tablet cannot run a CLI and is never driven from here. So:
   - a phone or a tablet (kind "ios", or an old pairing with no kind and no address of its own) is not listed with
     the computers; a computer says "shellframe" when it pairs, so one behind NAT (no address) stays a computer
-  - they are one row, "📱 行動裝置" with how many (and how many are on), folded by default
-  - unfolded, each is one line: its light, its name and ✕ to unpair; no Message / File; an old pairing with no kind
-    (it could be a computer) keeps ✎ to give it an address
+  - they are one row, "行動裝置" (with a phone icon) with how many (and how many are on), folded by default
+  - unfolded, each is one line: its light, its name and a cross to unpair; no Message / File; an old pairing with no kind
+    (it could be a computer) keeps a pencil to give it an address
   - computers are as before (their actions, their remote tabs); the divider counts both
   - the fold is remembered like the other folds
 Demo data only. Run: .venv/bin/python tests_sidebar_mobile_peers.py
@@ -90,7 +90,7 @@ with sync_playwright() as pw:
     text = page.locator("#sidebar-sessions").inner_text()
     check("no phone gets Message / File / Address or 'no address, waiting' (only the computer behind NAT says it)",
           text.count("無位址") == 1 and "示範手機" not in text, text[:300])
-    check("the divider counts computers and phones", "(3 + 📱3)" in text, text[:200])
+    check("the divider counts computers and phones", "(3 + 3)" in text and page.locator("#sidebar-sessions .sb-divider svg.sfi").count() >= 3, text[:200])
     check("a computer keeps its actions", page.locator('#sidebar-sessions [data-pact="msg"][data-pid="mac1"]').count() == 1)
     check("…and one behind NAT keeps ✎ 位址", page.locator('#sidebar-sessions [data-pact="edit"][data-pid="mac3"]').count() == 1)
     page.locator("#sidebar").screenshot(path=str(SHOTS / "sidebar-mobile-folded.png"))

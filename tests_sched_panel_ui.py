@@ -193,7 +193,8 @@ def rows(page):
     return page.evaluate("""[...document.querySelectorAll('#board-list .sched-row')].map(r => ({
       id: r.dataset.id, cls: r.className, title: r.querySelector('.sched-title').childNodes[0].textContent,
       freq: r.querySelector('.sched-freq').textContent,
-      notes: [...r.querySelectorAll('.sched-note')].map(n => n.textContent),
+      notes: [...r.querySelectorAll('.sched-note')].map(n => n.textContent.trim()),
+      noteIcons: [...r.querySelectorAll('.sched-note svg.sfi')].length,
       members: [...r.querySelectorAll('.sched-member')].map(m => m.textContent),
       times: [...r.querySelectorAll('.sched-mt')].map(m => m.textContent),
       states: [...r.querySelectorAll('.sched-ms')].map(m => m.textContent),
@@ -227,17 +228,18 @@ with sync_playwright() as pw:
     check("…it reads 'ran 11/10', not 'every day … on'", g["freq"] == "單次・11/10 已執行" and "每天" not in g["text"] and "啟用" not in g["text"], g["freq"])
     check("…with the three times under it, in the order they fire", g["times"] == ["09:05", "18:10", "18:25"]
           and g["states"] == ["已執行"] * 3, (g["times"], g["states"]))
-    check("…and the warning that it fires again next year", g["notes"] == ["⚠ 隔年 11/10 會再觸發"] and " warn" in g["cls"], g["notes"])
+    check("…and the warning that it fires again next year", g["notes"] == ["隔年 11/10 會再觸發"] and g["noteIcons"] == 1 and " warn" in g["cls"], g["notes"])
     check("…it has no on/off switch (armed by asking the agent), but it can be edited", not g["toggle"] and g["edit"])
     bot = by(rs, "chat-bot")
-    check("a resident job that is not running and exited 78 is flagged red", bot["notes"] == ["⚠ 沒有在跑・上次 exit 78"] and " bad" in bot["cls"]
+    check("a resident job that is not running and exited 78 is flagged red", bot["notes"] == ["沒有在跑・上次 exit 78"] and bot["noteIcons"] == 1 and " bad" in bot["cls"]
           and bot["freq"] == "由 launchd 保持常駐", bot)
     check("a resident job that is running is not", by(rs, "relay")["notes"] == [] and "執行中" in by(rs, "relay")["text"])
     head = page.evaluate("[...document.querySelectorAll('#board-list .loop-group')].map(g => g.textContent)")
     check("the header counts the schedules that are on (the one-off group, having run, is not; the resident jobs are not schedules)",
           head[0] == "排程6/8 開", head)
     check("the resident block has its own header: how many are running", head[1] == "常駐1/2 執行中", head)
-    check("the overview line agrees with the schedules", page.evaluate("document.getElementById('feed-overview').textContent.trim()") == "⏰ 6/8")
+    check("the overview line agrees with the schedules (a clock icon, then 6/8)", page.evaluate("document.getElementById('feed-overview').textContent.trim()") == "6/8"
+          and page.evaluate("!!document.querySelector('#feed-overview .ov-sched svg.sfi')"))
     check("the page raised no error", not page.errors, page.errors[:3])
     geo = page.evaluate("""(() => {
       const box = e => e.getBoundingClientRect();
@@ -260,7 +262,7 @@ with sync_playwright() as pw:
     rs2 = rows(page)
     check("…and the row, the header count and the overview follow", not by(rs2, "newsletter")["on"]
           and page.evaluate("document.querySelector('#board-list .loop-group-n').textContent") == "5/8 開"
-          and page.evaluate("document.getElementById('feed-overview').textContent.trim()") == "⏰ 5/8")
+          and page.evaluate("document.getElementById('feed-overview').textContent.trim()") == "5/8")
     page.close()
 
     print("English")
@@ -269,9 +271,9 @@ with sync_playwright() as pw:
     check("cadence in English", by(rs, "backup")["freq"] == "Daily 02:00 / 21:00" and by(rs, "weekdays")["freq"] == "Mon–Fri 09:50 / 12:30 / 15:30 / 17:50"
           and by(rs, "cache-warm")["freq"] == "Every 10 min")
     g = by(rs, "group:")
-    check("the one-off in English", g["freq"] == "One-off · ran 11/10" and g["notes"] == ["⚠ Fires again on 11/10 next year"]
+    check("the one-off in English", g["freq"] == "One-off · ran 11/10" and g["notes"] == ["Fires again on 11/10 next year"]
           and g["states"] == ["ran"] * 3, (g["freq"], g["notes"], g["states"]))
-    check("the resident job in English", by(rs, "chat-bot")["notes"] == ["⚠ Not running · last exit 78"]
+    check("the resident job in English", by(rs, "chat-bot")["notes"] == ["Not running · last exit 78"]
           and by(rs, "chat-bot")["freq"] == "Kept alive by launchd")
     head = page.evaluate("[...document.querySelectorAll('#board-list .loop-group')].map(g => g.textContent)")
     check("both block headers in English", head[:2] == ["Schedules6/8 on", "Resident1/2 running"], head)

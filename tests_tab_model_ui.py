@@ -141,7 +141,7 @@ def run(browser, engine):
     labels = page.locator("#tm-pop .tm-opt").all_inner_texts()
     check("opens under the chip, with the models it was given (a made-up one proves nothing is hard-coded)",
           page.evaluate(POP) and [x.split(" ")[0] for x in labels] == ["CLI", "Opus", "Sonnet", "Haiku", "示範用模型"], labels)
-    check("the current one is marked", "✓" in page.locator('#tm-pop [data-key="opus"]').inner_text())
+    check("the current one is marked", page.locator('#tm-pop [data-key="opus"] svg.sfi').count() == 1 and page.locator('#tm-pop [data-key="sonnet"] svg.sfi').count() == 0)
     check("the thinking levels are there, the current one marked", page.locator("#tm-pop .tm-seg button").count() == 5
           and "cur" in page.locator('#tm-pop .tm-seg [data-key="high"]').get_attribute("class"))
     check("nothing picked: Switch is off", page.locator("#tm-pop .tm-go").is_disabled())
