@@ -159,8 +159,9 @@ def name_is_secret(path) -> bool:
     return any(w in name for w in NAME_WORDS)
 
 
-def content_has_secret(path) -> bool:
-    """True when a text file under 256 KB holds anything the masking would mask. Binary files are never read."""
+def content_has_secret(path, strong=False) -> bool:
+    """True when a text file under 256 KB holds anything the masking would mask (`strong`: only a private key block or
+    a known kind of token: sk-…, ghp_…, AKIA…, a JWT, a Bearer value). Binary files are never read."""
     try:
         p = Path(path)
         if ext_of(p) in ("pdf", "png", "jpg", "jpeg", "gif", "webp", "mp4", "mov", "webm", "zip", "gz", "7z", "docx", "xlsx", "pptx"):
@@ -173,16 +174,20 @@ def content_has_secret(path) -> bool:
     if b"\0" in data:
         return False
     text = data.decode("utf-8", "replace")
+    if strong:
+        return bool(_PEM.search(text) or oo._KEY_BLOCK.search(text) or oo._KNOWN.search(text))
     return mask(text) != text
 
 
-def secret_reason(path, home=None, protected=(), content=True) -> str:
-    """Why a file must not be listed, previewed or opened without asking: 'name', 'dir', 'content', or ''."""
+def secret_reason(path, home=None, protected=(), content="strong") -> str:
+    """Why a file must not be listed, previewed or opened without asking: 'name', 'dir', 'content', or ''. `content`:
+    "all" (auto-pickup: anything the masking would mask: a guess is cautious), "strong" (a file a bot registered: a
+    private key or a known kind of token; the rest of what looks like a secret is masked in the preview), or False."""
     if name_is_secret(path):
         return "name"
     if _inside(path, protected_dirs(home, protected)):
         return "dir"
-    if content and content_has_secret(path):
+    if content and content_has_secret(path, strong=content == "strong"):
         return "content"
     return ""
 
@@ -553,7 +558,7 @@ def find_candidates(text, *, now=None, home=None, protected=()) -> dict:
         ext = ext_of(p)
         if ext not in AUTO_EXTS or ext in CODE_EXTS:
             continue
-        if ext in TEXT_LIKE and content_has_secret(p):
+        if ext in TEXT_LIKE and content_has_secret(p):         # a guess scans for everything the masking masks
             skipped.append(os.path.basename(p))
             continue
         if len(cands) < REPLY_MAX:

@@ -372,7 +372,11 @@ class TasksApiMixin:
     def tasks_overview(self) -> str:
         """The person's three lists: waiting for their decision, stuck, open. JSON."""
         try:
-            return json.dumps({"success": True, **self._tasks_lists()}, ensure_ascii=False)
+            out = {"success": True, **self._tasks_lists()}
+            deliv = self._deliv_overview() if hasattr(self, "_deliv_overview") else None
+            if deliv is not None:                   # the deliverables' counts and list ride on this read (api_deliverables)
+                out["deliverables"] = deliv
+            return json.dumps(out, ensure_ascii=False)
         except ss.Unavailable as e:
             return json.dumps({"success": False, "code": e.code, "message": _(e.en, e.zh)}, ensure_ascii=False)
 

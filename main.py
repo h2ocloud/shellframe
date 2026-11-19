@@ -95,6 +95,7 @@ from api_guide import GuideApiMixin
 from api_tasks import TasksApiMixin
 from api_office import OfficeApiMixin
 from api_office_objects import OfficeObjectsApiMixin
+from api_deliverables import DeliverablesApiMixin
 import tmux_sessions
 import wake_watch
 import usage_probe
@@ -2044,7 +2045,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
           AccountsApiMixin, BridgesApiMixin, DesktopApiMixin, ExtensionsApiMixin,
           LinkApiMixin, RemoteApiMixin, StatusApiMixin,
           UpdateApiMixin, VoiceApiMixin, TmuxApiMixin, BotsApiMixin, BotMemoryApiMixin, ChatApiMixin, PushApiMixin,
-          ConnectApiMixin, TabModelApiMixin, GuideApiMixin, OfficeApiMixin, OfficeObjectsApiMixin, TasksApiMixin):
+          ConnectApiMixin, TabModelApiMixin, GuideApiMixin, OfficeApiMixin, OfficeObjectsApiMixin, DeliverablesApiMixin, TasksApiMixin):
     """JS <-> Python bridge."""
 
     def __init__(self):

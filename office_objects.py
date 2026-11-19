@@ -48,7 +48,7 @@ import agent_status
 
 HOOK_TIMEOUT = 3.0           # seconds a hook may take before the popup says it is not available
 FURNITURE = ("bookshelf", "cabinet", "noticeboard", "mailbox", "generic")
-PLACES = ("lobby:wall", "lobby:near-primary")     # `zone:<id>` is accepted and stands where lobby:wall does
+PLACES = ("lobby:wall", "lobby:near-primary", "button")     # `zone:<id>` stands where lobby:wall does; "button" has no furniture, only the toolbar button
 OBJECTS_MAX = 12
 LIST_MAX = 400               # entries one answer may carry
 GROUPS_MAX = 200
@@ -174,7 +174,8 @@ def normalize_declaration(raw, lang="en"):
     for a in raw.get("actions") or []:
         if isinstance(a, dict) and _ID.fullmatch(str(a.get("id") or "")):
             actions.append({"id": a["id"], "label": _name(loc(a.get("label"), lang), 80),
-                            "needs_tab": bool(a.get("needs_tab")), "primary": bool(a.get("primary"))})
+                            "needs_tab": bool(a.get("needs_tab")), "primary": bool(a.get("primary")),
+                            "input": _name(loc(a.get("input"), lang), 120)})      # a one-line box the person fills first (its placeholder)
     return {
         "id": oid,
         "title": _name(loc(raw.get("title"), lang) or oid, 40),
@@ -193,8 +194,21 @@ def normalize_declaration(raw, lang="en"):
 
 # ── what comes back from a hook ──────────────────────────────────────────────
 def clean_summary(raw) -> dict:
+    """The badge and hint, and (an object that has one per person) `by_owner`: {key: {label, count, new, types, closed}},
+    which the office draws on each person's desk, and `by_task`: {task id: count}."""
     raw = raw if isinstance(raw, dict) else {}
-    return {"badge": max(0, min(999, _num(raw.get("badge")))), "hint": _name(raw.get("hint"), 120)}
+    out = {"badge": max(0, min(999, _num(raw.get("badge")))), "hint": _name(raw.get("hint"), 120)}
+    if isinstance(raw.get("by_owner"), dict):
+        by = {}
+        for key, v in list(raw["by_owner"].items())[:400]:
+            if isinstance(v, dict):
+                by[_ident(key, 120)] = {"label": _name(v.get("label"), 60), "count": max(0, _num(v.get("count"))),
+                                        "new": max(0, _num(v.get("new"))), "closed": bool(v.get("closed")),
+                                        "types": [_ident(t, 20) for t in (v.get("types") or [])[:3]]}
+        out["by_owner"] = by
+    if isinstance(raw.get("by_task"), dict):
+        out["by_task"] = {_ident(k, 20): max(0, _num(v)) for k, v in list(raw["by_task"].items())[:400]}
+    return out
 
 
 def clean_list(raw, lang="en") -> dict:
@@ -251,6 +265,10 @@ def clean_link(raw):
     return out
 
 
+_IMAGE = re.compile(r"data:image/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+")
+IMAGE_MAX = 6_000_000            # characters of one inline picture (a data: URL)
+
+
 def clean_item(raw, declared_actions=()) -> dict:
     raw = raw if isinstance(raw, dict) else {}
     meta = [[_name(m[0], 40), _body(m[1])] for m in (raw.get("meta") or [])[:20]
@@ -275,23 +293,43 @@ def clean_item(raw, declared_actions=()) -> dict:
             "sections": sections, "actions": actions,
             "action_hints": {k: _name(v, 120) for k, v in (raw.get("action_hints") or {}).items()
                              if isinstance(raw.get("action_hints"), dict) and k in known},
+            "action_labels": {k: _name(v, 80) for k, v in (raw.get("action_labels") or {}).items()
+                              if isinstance(raw.get("action_labels"), dict) and k in known},
+            # a picture the object read for this entry: only a data: URL of a raster image, passed as it is (never masked,
+            # never scripted: the page puts it in an <img>); anything else is dropped
+            "image": raw["image"] if isinstance(raw.get("image"), str) and len(raw["image"]) <= IMAGE_MAX
+            and _IMAGE.fullmatch(raw["image"]) else "",
             "owner": _name(raw.get("owner"), 60), "owner_key": _ident(raw.get("owner_key"), 80)}
 
 
-def clean_action(raw) -> dict:
+def clean_action(raw, trusted=False) -> dict:
+    """What an action answered. `trusted` (a built-in object) keeps a long file name in a line to a bot readable: the
+    32-character rule is for text nobody checked (a plugin's); the other masking rules apply to both."""
     raw = raw if isinstance(raw, dict) else {}
     out = {"ok": raw.get("ok") is not False, "message": _name(raw.get("message"), 200)}
     tell = raw.get("tell")
     if isinstance(tell, dict) and tell.get("to") and str(tell.get("text") or "").strip():
-        out["tell"] = {"to": _ident(tell["to"], 80), "text": clip(" ".join(redact_text(tell["text"]).split()), 600)}
+        out["tell"] = {"to": _ident(tell["to"], 80),
+                       "text": clip(" ".join(redact_text(tell["text"], strict=not trusted).split()), 600)}
+        after = tell.get("after")             # asked of the object once the line went in (a note on a task)
+        if isinstance(after, dict) and _ID.fullmatch(str(after.get("action") or "")):
+            out["tell"]["after"] = {"action": after["action"], "args": {str(k)[:40]: _ident(v, 300) for k, v in
+                                                                         (after.get("args") or {}).items()}}
+    if raw.get("refresh"):
+        out["refresh"] = True                 # the list changed: the popup reads it again
+    conf = raw.get("confirm")
+    if isinstance(conf, dict) and conf.get("text"):
+        out["confirm"] = {"text": _name(conf["text"], 200), "label": _name(conf.get("label") or "OK", 40),
+                          "args": {str(k)[:40]: _ident(v, 60) for k, v in (conf.get("args") or {}).items()}}
     go = raw.get("go")
     if isinstance(go, dict):
         link = clean_link(dict(go, label=go.get("label") or "go")) or ({"settings": _ident(go["settings"], 80)}
                                                                        if go.get("settings") else None)
         if link:
             out["go"] = {k: v for k, v in link.items() if k != "label"}
-    if raw.get("open"):
-        out["open"] = str(raw["open"])        # a path the object derived itself; the host opens it, the page never sees it
+    for k in ("open", "reveal", "url"):
+        if raw.get(k):
+            out[k] = str(raw[k])              # a path or a URL the object derived itself; the host opens it, the page never sees it
     return out
 
 
@@ -458,4 +496,4 @@ class Registry:
                              args if isinstance(args, dict) else {})
         if isinstance(res, dict) and res.get("success") is False:
             return res
-        return dict(clean_action(res), success=True)
+        return dict(clean_action(res, trusted=not isinstance(obj, PluginObject)), success=True)

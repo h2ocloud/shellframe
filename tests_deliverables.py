@@ -199,8 +199,11 @@ env = make(".env", "API_TOKEN=abc123xyz\n", base=WORK)
 check("a .env file the bot registered: registered, flagged", dv.add(*BOT, env, now=NOW, home=HOME, path=DB)["flag"] == "secret")
 for name in ("notes-password.txt", "我的 Token.md", "x.pem"):
     check(f"{name}: flagged by its name", dv.add(*BOT, make(name), now=NOW, home=HOME, path=DB)["flag"] == "secret")
-check("a text file whose content matches the rules: flagged",
-      dv.add(*BOT, make("ok-name.md", "連線: API_TOKEN=abc123xyz\n"), now=NOW, home=HOME, path=DB)["flag"] == "secret")
+check("a text file with a private key block or a known kind of token: flagged",
+      dv.add(*BOT, make("ok-name.md", "連線: ghp_demoabcdefghijkl\n"), now=NOW, home=HOME, path=DB)["flag"] == "secret"
+      and dv.add(*BOT, make("ok-name2.md", "-----BEGIN PGP PRIVATE KEY BLOCK-----\nx\n"), now=NOW, home=HOME, path=DB)["flag"] == "secret")
+check("…one with only a KEY=value is registered unflagged (its preview is masked instead)",
+      dv.add(*BOT, make("ok-name3.md", "連線: API_TOKEN=abc123xyz\n"), now=NOW, home=HOME, path=DB)["flag"] == "")
 check("a harmless file is not flagged", dv.add(*BOT, make("harmless.md", "只是一段話\n"), now=NOW, home=HOME, path=DB)["flag"] == "")
 ssh = make(".ssh/notes.md", "hello", base=HOME)
 check("a file under ~/.ssh: flagged", dv.add(*BOT, ssh, now=NOW, home=HOME, path=DB)["flag"] == "secret")

@@ -1415,6 +1415,8 @@ class RemoteApiMixin:
             return self._connect_sfctl(args)
         elif cmd == "task":                           # sfctl task add|list|mine|show|update|note|done|drop|stuck (api_tasks)
             return self._tasks_sfctl(args)
+        elif cmd == "deliver":                        # sfctl deliver add|list|show (api_deliverables); no Frame Link route maps to it
+            return self._deliv_sfctl(args)
 
         else:
             return {"success": False, "message": f"Unknown command: {cmd}"}
