@@ -26,6 +26,9 @@ if (fs.existsSync(file)) {
     check('the settings batch keys are present', [
       'groupsTitle', 'sttTitle', 'skillTitle', 'skillCopy', 'sttSave',
       'refreshStatusTitle', 'usageBriefTitle', 'usageMissingLabel',
+      'pairButton', 'pairButtonTitle', 'noPeersHint', 'pairDeviceTitle',
+      'generatePairingCodeTitle', 'pairingCodeTitle', 'joinPairingTitle',
+      'maintenanceTitle', 'maintenanceDescription', 'maintenanceCheckUpdate',
     ].every(k => Object.prototype.hasOwnProperty.call(table.en, k) && Object.prototype.hasOwnProperty.call(table['zh-TW'], k)));
   }
 }
@@ -35,6 +38,10 @@ if (fs.existsSync(indexFile)) {
   check('dynamic skill status has no static i18n attribute',
     !/<[^>]*id="skill-install-status"[^>]*data-i18n=/.test(index));
   check('skill status loading text uses t()', /el\.textContent\s*=\s*t\('skillLoading'\)/.test(index));
+  check('settings footer has a localized tooltip',
+    /id="btn-settings"[^>]*data-i18n-title="settings"/.test(index));
+  check('narrow sidebar collapses settings to a complete icon button',
+    /@container sidebar-footer \(max-width: 185px\)[\s\S]*?#btn-settings/.test(index));
 }
 
 process.exit(failures ? 1 : 0);

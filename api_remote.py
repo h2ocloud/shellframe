@@ -380,13 +380,17 @@ class RemoteApiMixin:
                 result = json.loads(self.check_update())
                 return {
                     "success": True,
-                    "message": ("有新版 v{}".format(result.get("remote"))
-                                if result.get("update_available")
-                                else "已是最新版 v{}".format(result.get("local"))),
+                    "message": (sf_lang.pick(
+                        "New version v{}".format(result.get("remote")),
+                        "有新版 v{}".format(result.get("remote")))
+                                if result.get("update_available") else sf_lang.pick(
+                        "Already up to date v{}".format(result.get("local")),
+                        "已是最新版 v{}".format(result.get("local")))),
                     "details": result,
                 }
             except Exception as e:
-                return {"success": False, "message": f"Check update failed: {e}"}
+                return {"success": False, "message": sf_lang.pick(
+                    f"Check update failed: {e}", f"檢查更新失敗：{e}")}
 
         elif cmd == "update":
             # do_update 是 git pull ＋ 依賴安裝，會跑幾十秒；它自己每一步都有
@@ -401,7 +405,8 @@ class RemoteApiMixin:
                                 if k not in ("success", "message")},
                 }
             except Exception as e:
-                return {"success": False, "message": f"Update failed: {e}"}
+                return {"success": False, "message": sf_lang.pick(
+                    f"Update failed: {e}", f"更新失敗：{e}")}
 
         elif cmd == "reload":
             try:
@@ -1079,27 +1084,34 @@ class RemoteApiMixin:
                     }
                 }
             except Exception as e:
-                return {"success": False, "message": f"Update failed: {e}"}
+                return {"success": False, "message": sf_lang.pick(
+                    f"Update failed: {e}", f"更新失敗：{e}")}
 
         elif cmd == "link_status":
             # Frame Link（跨機配對）狀態：listener + peers 可達性。
             try:
                 st = self._link().status()
-                lines = [f"🔗 Frame Link — {'on' if st.get('running') else 'off'}"
-                         f" · {st.get('frame_name')}"]
+                lines = [sf_lang.pick(
+                    f"🔗 Frame Link — {'on' if st.get('running') else 'off'} · {st.get('frame_name')}",
+                    f"🔗 Frame Link — {'開啟' if st.get('running') else '關閉'} · {st.get('frame_name')}")]
                 if st.get("running"):
                     addrs = ", ".join(st.get("addresses") or []) or "?"
-                    lines.append(f"   {addrs} :{st.get('listen_port')}")
+                    lines.append(sf_lang.pick(
+                        f"   Address: {addrs} :{st.get('listen_port')}",
+                        f"   位址：{addrs} :{st.get('listen_port')}"))
                 for p in st.get("peers") or []:
                     dot = "🟢" if p.get("reachable") else "⚫"
-                    lines.append(f" {dot} {p['name']} — {p.get('host') or '(無位址)'}"
-                                 f":{p.get('port') or ''}")
+                    lines.append(sf_lang.pick(
+                        f" {dot} {p['name']} — {p.get('host') or '(no address)'}:{p.get('port') or ''}",
+                        f" {dot} {p['name']} — {p.get('host') or '(無位址)'}:{p.get('port') or ''}"))
                 if not st.get("peers"):
-                    lines.append(" (尚未配對任何 ShellBot)")
+                    lines.append(sf_lang.pick(
+                        " (No ShellBot paired yet)", " (尚未配對任何 ShellBot)"))
                 return {"success": True, "message": "\n".join(lines),
                         "details": st}
             except Exception as e:
-                return {"success": False, "message": f"link status failed: {e}"}
+                return {"success": False, "message": sf_lang.pick(
+                    f"Link status failed: {e}", f"查詢連線狀態失敗：{e}")}
 
         elif cmd == "link_pair":
             # 產生短效一次性配對碼（TG 遠端也能觸發，人在外面即可配對）。`mode` (sfctl link-pair --mode): the
@@ -1110,18 +1122,28 @@ class RemoteApiMixin:
                 if not res.get("success"):
                     return res
                 addrs = ", ".join(res.get("addresses") or []) or "?"
-                way = {"duplex": "雙向", "host_controls": "這台當主：只有這台能操作對方",
-                       "joiner_controls": "這台當從：只有對方能操作這台"}.get(mode, mode)
-                msg = (f"🔗 配對碼：{res['code']}（{way}）\n"
-                       f"位址：{addrs}  port {res['port']}\n"
-                       f"{res['expires_in']} 秒內、限一次，"
-                       f"在另一台 ShellBot 選「加入配對」輸入\n"
-                       f"📱 手機 App：點連結直接配對 → {res.get('pair_url', '')}")
+                way = {
+                    "duplex": sf_lang.pick("both ways", "雙向"),
+                    "host_controls": sf_lang.pick("this machine controls the other", "這台當主：只有這台能操作對方"),
+                    "joiner_controls": sf_lang.pick("the other machine controls this one", "這台當從：只有對方能操作這台"),
+                }.get(mode, mode)
+                msg = sf_lang.pick(
+                    f"🔗 Pairing code: {res['code']} ({way})\n"
+                    f"Address: {addrs}  port {res['port']}\n"
+                    f"Valid for {res['expires_in']} seconds and one use; on another ShellBot choose ‘Join pairing’ and enter it\n"
+                    f"📱 Mobile app: open the link to pair → {res.get('pair_url', '')}",
+                    f"🔗 配對碼：{res['code']}（{way}）\n"
+                    f"位址：{addrs}  port {res['port']}\n"
+                    f"{res['expires_in']} 秒內、限一次，在另一台 ShellBot 選「加入配對」輸入\n"
+                    f"📱 手機 App：點連結直接配對 → {res.get('pair_url', '')}")
                 if not res.get("relay_url"):
-                    msg += "\n（尚未設定 relay：手機需與電腦同區網，或電腦有 port-forward）"
+                    msg += sf_lang.pick(
+                        "\n(Relay is not configured: the phone must be on the same network or this machine needs port forwarding)",
+                        "\n（尚未設定 relay：手機需與電腦同區網，或電腦有 port-forward）")
                 return {"success": True, "message": msg, "details": res}
             except Exception as e:
-                return {"success": False, "message": f"link pair failed: {e}"}
+                return {"success": False, "message": sf_lang.pick(
+                    f"Link pairing failed: {e}", f"產生配對碼失敗：{e}")}
 
         elif cmd == "link_enable":
             # sfctl link-enable on|off: what the switch under Settings → Other computers does (a headless machine
@@ -1130,10 +1152,13 @@ class RemoteApiMixin:
                 st = json.loads(self.link_set_enabled(bool(args.get("enabled"))))
                 on = bool(st.get("enabled"))
                 return {"success": on == bool(args.get("enabled")),
-                        "message": ("🔗 連線已開：" + ("在聽" if st.get("running") else "還沒在聽，看 sfctl link-status"))
-                        if on else "🔗 連線已關", "details": st}
+                        "message": (sf_lang.pick(
+                            "🔗 Link enabled: " + ("listening" if st.get("running") else "not listening yet; see sfctl link-status"),
+                            "🔗 連線已開：" + ("在聽" if st.get("running") else "還沒在聽，看 sfctl link-status")))
+                        if on else sf_lang.pick("🔗 Link disabled", "🔗 連線已關"), "details": st}
             except Exception as e:
-                return {"success": False, "message": f"link enable failed: {e}"}
+                return {"success": False, "message": sf_lang.pick(
+                    f"Link enable failed: {e}", f"切換連線失敗：{e}")}
 
         elif cmd == "link_join":
             try:
@@ -1146,11 +1171,14 @@ class RemoteApiMixin:
                 if res.get("success"):
                     self._notify_ui_sessions_changed()
                     return {"success": True,
-                            "message": f"✅ 已配對：{res.get('peer_name')}",
+                            "message": sf_lang.pick(
+                                f"✅ Paired: {res.get('peer_name')}",
+                                f"✅ 已配對：{res.get('peer_name')}"),
                             "details": res}
                 return res
             except Exception as e:
-                return {"success": False, "message": f"link join failed: {e}"}
+                return {"success": False, "message": sf_lang.pick(
+                    f"Link join failed: {e}", f"加入配對失敗：{e}")}
 
         elif cmd == "delay_schedule":
             try:
@@ -1261,7 +1289,9 @@ class RemoteApiMixin:
                 if not pid:
                     names = ", ".join(v.get("name", k[:8]) for k, v in peers.items()) or "(none)"
                     return {"success": False,
-                            "message": f"找不到 peer「{target}」。已配對：{names}"}
+                            "message": sf_lang.pick(
+                                f"Peer ‘{target}’ not found. Paired: {names}",
+                                f"找不到 peer「{target}」。已配對：{names}")}
                 link, sid = self._link(), args.get("sid", "")
                 if cmd == "link_list":
                     return link.remote_info(pid)
@@ -1301,11 +1331,15 @@ class RemoteApiMixin:
                             break
                 if not pid:
                     return {"success": False,
-                            "message": f"找不到 peer「{target}」（用 link_status 看名單）"}
+                            "message": sf_lang.pick(
+                                f"Peer ‘{target}’ not found (use link_status to see the list)",
+                                f"找不到 peer「{target}」（用 link_status 看名單）")}
                 self._link().unpair(pid)
-                return {"success": True, "message": f"已斷開 {target}"}
+                return {"success": True, "message": sf_lang.pick(
+                    f"Unpaired {target}", f"已斷開 {target}")}
             except Exception as e:
-                return {"success": False, "message": f"link unpair failed: {e}"}
+                return {"success": False, "message": sf_lang.pick(
+                    f"Link unpair failed: {e}", f"解除配對失敗：{e}")}
 
         elif cmd == "tab_login":
             # A paired phone's sign-in card (POST /link/login): `step` only reads where it is; any other action presses
