@@ -2,7 +2,8 @@
  * SFIcons.html(name, opts) returns the <svg> as a string (opts.cls adds a class); static markup says data-sfi="name" and
  * SFIcons.hydrate() swaps it for the drawing at load. Everything is currentColor, so an icon takes its button's colour, hover and
  * dimmed states. The drawings are decorative (aria-hidden): the button around an icon-only one carries the title / aria-label.
- * Sizes live in the CSS of the part that uses an icon (icons.css has the base rule). No fonts, no network. */
+ * Sizes live in the CSS of the part that uses an icon (icons.css has the base rule); width / height 16 on the <svg> are only what it
+ * falls back to without the stylesheet. No fonts, no network. */
 (function (root) {
   'use strict';
   const ICONS = {
@@ -62,7 +63,7 @@
     const d = ICONS[name];
     if (d == null) { try { console.warn('SFIcons: no icon named ' + name); } catch (e) { /* no console */ } return ''; }
     const cls = opts && opts.cls ? ' ' + String(opts.cls).replace(/[^\w -]/g, '') : '';
-    return '<svg class="sfi' + cls + '" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' + d + '</svg>';
+    return '<svg class="sfi' + cls + '" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">' + d + '</svg>';
   }
   // Static markup marks its icon with data-sfi="name" (an optional data-sfi-cls adds a class); the element's own text is replaced.
   function hydrate(scope) {

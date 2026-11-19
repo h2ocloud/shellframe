@@ -14,8 +14,8 @@
 #btn-refresh-status .sfi { width: 14px; height: 14px; }
 .sb-close .sfi, .close-tab .sfi { width: 11px; height: 11px; vertical-align: -1px; }
 .sb-relaunch .sfi { width: 13px; height: 13px; vertical-align: -2px; }
-.sb-gear .sfi { width: 15px; height: 15px; }
-.sb-footer-ico .sb-ico .sfi { width: 16px; height: 16px; }
+.sb-gear .sfi { width: 12px; height: 12px; }
+.sb-footer-ico .sb-ico .sfi { width: 13px; height: 13px; }
 #paste-confirm-bar .sfi { width: 16px; height: 16px; vertical-align: -3px; }
 .sb-divider .sfi { width: 12px; height: 12px; vertical-align: -2px; }
 .sb-divider .sfi-s { width: 10px; height: 10px; }

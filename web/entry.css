@@ -41,7 +41,7 @@
 /* the foot: Settings · Guide · For AI · ? — words beside the icons when they fit, the icons with their titles when not */
 .sb-word { display: none; }
 #sb-footer-row.sfe-words { gap: 0; }
-#sb-footer-row.sfe-words > .sb-footer-btn, #sb-footer-row.sfe-words > #btn-settings { flex: none; width: auto; min-width: auto; overflow: visible; padding: 0 6px; gap: 4px; height: 28px; }
+#sb-footer-row.sfe-words > .sb-footer-btn, #sb-footer-row.sfe-words > #btn-settings { flex: none; width: auto; min-width: auto; overflow: visible; padding: 0 5px; gap: 4px; height: 28px; }
 #sb-footer-row.sfe-words > #btn-about { width: 28px; padding: 0; }
 #sb-footer-row.sfe-words .sb-word { display: inline; font-size: 12px; }
 #sb-footer-row.sfe-words .sb-footer-ico .sb-ico { opacity: .8; }
