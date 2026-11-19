@@ -132,6 +132,33 @@ flagged = deliver("s1", "add", ref=str(mk("my-token.txt")), title="x")
 check("a file that looks like a key is registered and the bot is told it is flagged", flagged["success"] and flagged["details"]["flag"] == "secret" and "金鑰" in flagged["message"])
 check("a secret in --note never reaches the database", "abc123xyz" not in repr(dv.get(deliver("s1", "add", ref=str(f1c), title="n", note="API_TOKEN=abc123xyz")["details"]["id"])))
 
+print("a tab's birth time")
+import tmux_sessions  # noqa: E402
+TMUX = {"rows": [{"name": "sf_s40", "created": 5000}]}
+tmux_sessions.session_details = lambda tmux, prefix="sf_": list(TMUX["rows"])
+Main._tmux_bin = staticmethod(lambda: "/usr/bin/tmux")
+app.sessions["s40"] = types.SimpleNamespace(_custom_label="tmux 分頁", _spawn_ts=9000.0, alive=True, _tmux_name="sf_s40")
+check("a tmux tab: opened = tmux's session_created (not the spawn time)", app._deliv_live_tabs()["s40"] == "5000")
+app.sessions["s40"]._spawn_ts = 99999.0
+check("…kept on the tab, so a restart of the app (a new object, the same tmux session) gives the same key",
+      app._deliv_opened("s40", app.sessions["s40"]) == "5000"
+      and app._deliv_opened("s40", types.SimpleNamespace(_tmux_name="sf_s40", _spawn_ts=123456.0, alive=True)) == "5000")
+gone = app.sessions.pop("s40")
+del gone
+import gc  # noqa: E402
+gc.collect()
+TMUX["rows"] = [{"name": "sf_s40", "created": 7000}]
+app.sessions["s40"] = types.SimpleNamespace(_custom_label="新的 tmux 分頁", _spawn_ts=9000.0, alive=True, _tmux_name="sf_s40")
+check("a later tab that gets the same id (even at the same memory address) has its own birth time, not the old tab's", app._deliv_live_tabs()["s40"] == "7000")
+TMUX["rows"] = []
+app.sessions["s41"] = types.SimpleNamespace(_custom_label="tmux 沒回答", _spawn_ts=3333.0, alive=True, _tmux_name="sf_s41")
+check("tmux did not answer: the spawn time this time, and it is NOT kept (the next call asks tmux again)",
+      app._deliv_live_tabs()["s41"] == "3333" and not getattr(app.sessions["s41"], "_deliv_opened_at", None))
+TMUX["rows"] = [{"name": "sf_s41", "created": 3300}]
+check("…so the tab's papers do not fall into the closed group for good", app._deliv_live_tabs()["s41"] == "3300")
+del app.sessions["s40"], app.sessions["s41"]
+Main._tmux_bin = staticmethod(lambda: None)
+
 print("list and show")
 ls = deliver("s1", "list")
 check("list: this bot's undecided and kept ones, one line each", ls["success"] and len(ls["details"]["items"]) >= 4 and ls["message"].count("\n") >= 3 and "#" in ls["message"], ls["message"])
@@ -141,6 +168,9 @@ check("list --state candidate is empty for now", deliver("s1", "list", state="ca
 check("a bad state is refused", not deliver("s1", "list", state="weird")["success"])
 check("show N", deliver("s1", "show", id=str(row["id"]))["details"]["title"] == "示範週報" and "no such" not in deliver("s1", "show", id="#" + str(row["id"]))["message"])
 check("show of nothing", not deliver("s1", "show", id="9999")["success"] and not deliver("s1", "show", id="x")["success"])
+lnk = deliver("s1", "add", ref="https://demo.example.test/x?token=zz9token", title="帶 token 的連結")
+check("a link that carries a token is flagged, and sfctl never prints it back (list, show)", lnk["details"]["flag"] == "secret"
+      and "zz9token" not in json.dumps(deliver("s1", "list"), ensure_ascii=False) and "zz9token" not in json.dumps(deliver("s1", "show", id=str(lnk["details"]["id"])), ensure_ascii=False))
 check("a list never carries a file's text", "示範\n" not in json.dumps(ls, ensure_ascii=False))
 
 print("sfctl's side")
@@ -190,6 +220,7 @@ class T:
 api_deliverables.threading = types.SimpleNamespace(Thread=T)
 WORKING = {"s1": {"state": "working"}}
 DONE = {"s1": {"state": "done"}}
+IDLE = {"s1": {"state": "idle"}}
 app._deliv_observe(DONE)                      # first sight of a tab: a baseline, no read
 check("a tab that is already done when first seen is not read (a restart must not scan every tab)", not dv.listing(states=("candidate",)))
 app._deliv_observe(WORKING)
@@ -204,11 +235,19 @@ n = len(dv.listing())
 app._deliv_observe(WORKING)
 app._deliv_observe(DONE)
 check("the same reply is not read twice", len(dv.listing()) == n)
+TURNS["events"] = [{"kind": "user_msg", "text": "再整理"}, {"kind": "assistant_text", "text": f"另存一份 {mk('交付/示範二.pdf')}"}]
+app._deliv_observe(WORKING)
+app._deliv_observe(IDLE)
+check("a turn that ends as idle (no done in between) is read as well", any(Path(c["ref"]).name == "示範二.pdf" for c in dv.listing(states=("candidate",))))
+n_idle = len(dv.listing())
+app._deliv_observe(IDLE)
+app._deliv_observe(DONE)
+check("…once: done after idle, with no new turn in between, reads nothing more", len(dv.listing()) == n_idle)
 TURNS["events"] = [{"kind": "user_msg", "text": bot_memory.MARK + " 請寫記憶"}, {"kind": "assistant_text", "text": f"已寫入 {mk('交付/記憶.md')}"}]
 app._deliv_observe(WORKING)
 app._deliv_observe(DONE)
 check("a turn that answered the memory-save request is not read", not any(Path(c["ref"]).name == "記憶.md" for c in dv.listing(states=("candidate",))))
-check("candidates are not counted", dv.overview(app._deliv_live_tabs())["new"] == dv.overview(app._deliv_live_tabs())["new"] and dv.overview(app._deliv_live_tabs())["candidates_total"] == 1)
+check("candidates are not counted", dv.overview(app._deliv_live_tabs())["candidates_total"] == 2 and not any(r["state"] == "candidate" for r in dv.listing(states=("new", "kept"))))
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

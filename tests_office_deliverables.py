@@ -202,10 +202,12 @@ check("an unlinked deliverable: no follow-up; a secret in the person's words is 
 check("nothing to say: refused", O.action(ctx(), str(r_md["id"]), "ask_change", {"text": "  "})["ok"] is False)
 check("a closed tab cannot be told", "tab" in O.action(ctx(), str(r_old["id"]), "ask_change", {"text": "x"})["message"] or "分頁" in O.action(ctx(), str(r_old["id"]), "ask_change", {"text": "x"})["message"])
 flag_line = O.action(ctx(), str(r_env["id"]), "ask_change", {"text": "改"})["tell"]["text"]
-check("a flagged file's folder is not put in the line (its name only)", "設定.env" in flag_line and str(TMP) not in flag_line, flag_line)
+check("a flagged file's line is the same form (the bot registered it, it knows where it is)", flag_line == f"（交付物）請改示範設定：改；檔案在{r_env['ref']}", flag_line)
+link_line = O.action(ctx(), str(r_link["id"]), "ask_change", {"text": "改"})["tell"]["text"]
+check("a link: the same form, its address masked", link_line.startswith("（交付物）請改示範預覽站：改；檔案在https://demo.example.test/preview/login") and "zz9" not in link_line, link_line)
 os.environ["SHELLFRAME_PROMPT_LANG"] = "en"
 en = O.action(oo.Ctx("en", live_tabs=lambda: LIVE, deliv=lambda: {"path": DB, "home": HOME, "now": NOW}), str(r_md["id"]), "ask_change", {"text": "fix"})
-check("English has its own wording", en["tell"]["text"].startswith("(Deliverable) Please change "), en["tell"]["text"])
+check("ONE protocol form, whatever the language: Chinese (the board's lines are too)", en["tell"]["text"].startswith("（交付物）請改示範週報草稿：fix；檔案在"), en["tell"]["text"])
 os.environ["SHELLFRAME_PROMPT_LANG"] = "zh"
 
 print("candidates")

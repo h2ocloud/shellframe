@@ -31,7 +31,6 @@ import deliverables as dv
 import office_deliverables
 import office_objects
 import sf_lang
-import sf_notify
 import state_store as ss
 import tmux_sessions
 from api_host import main
@@ -45,14 +44,15 @@ class DeliverablesApiMixin:
     # ── who a tab is ──────────────────────────────────────────────────────
     def _deliv_opened(self, sid: str, s, details=None) -> str:
         """When the tab was opened, as a stable string: tmux's session_created (the same after a restart of the app, and a
-        new tab with a used id has a new one), else the spawn time. Cached per tab object; `details` is tmux's answer, when
-        the caller asked for several tabs at once."""
-        cache = self.__dict__.setdefault("_deliv_open_cache", {})
-        hit = cache.get(sid)
-        if hit and hit[0] == id(s):
-            return hit[1]
-        opened = ""
+        new tab with a used id has a new one), else (no tmux: a plain pty tab) the spawn time. Kept on the tab's own object
+        (never in a table keyed by sid or id(): both are used again), and only when it is the tab's real birth time: a tmux
+        tab whose tmux did not answer is read again next time. `details` is tmux's answer, when the caller asked for several
+        tabs at once."""
+        kept = getattr(s, "_deliv_opened_at", None)
+        if kept:
+            return kept
         name = getattr(s, "_tmux_name", None)
+        opened = ""
         if name and not main.IS_WIN:
             try:
                 if details is None:
@@ -63,21 +63,25 @@ class DeliverablesApiMixin:
                         break
             except Exception:
                 _swallow("deliv:opened")
-        if not opened:
+            if not opened:
+                return str(int(float(getattr(s, "_spawn_ts", 0) or 0)))      # tmux did not say: this time only
+        else:
             opened = str(int(float(getattr(s, "_spawn_ts", 0) or 0)))
-        cache[sid] = (id(s), opened)
+        try:
+            s._deliv_opened_at = opened
+        except AttributeError:
+            pass
         return opened
 
     def _deliv_live_tabs(self) -> dict:
         """{sid: opened} of the tabs that are open (one tmux call for all the tabs not seen before)."""
         out, details = {}, None
-        cache = self.__dict__.get("_deliv_open_cache", {})
         for sid, s in list(self.sessions.items()):
             if not getattr(s, "alive", True):
                 continue
-            if details is None and getattr(s, "_tmux_name", None) and not (cache.get(sid) and cache[sid][0] == id(s)):
+            if details is None and getattr(s, "_tmux_name", None) and not getattr(s, "_deliv_opened_at", None) and not main.IS_WIN:
                 try:
-                    details = tmux_sessions.session_details(main._tmux_bin()) if not main.IS_WIN else []
+                    details = tmux_sessions.session_details(main._tmux_bin())
                 except Exception:
                     _swallow("deliv:details")
                     details = []
@@ -116,7 +120,7 @@ class DeliverablesApiMixin:
     # ── sfctl deliver ─────────────────────────────────────────────────────
     @staticmethod
     def _deliv_line(r) -> str:
-        where = r["ref"] if r["kind"] == "url" else dv.mask_line(r["ref"], 200, strict=False)
+        where = dv.mask_line(r["ref"], 200, strict=False)
         return f"#{r['id']} {r['state']} {r['type']} {r['title']}  {where}" + (f"  — {r['note']}" if r["note"] else "")
 
     def _deliv_sfctl(self, args: dict) -> dict:
@@ -156,7 +160,7 @@ class DeliverablesApiMixin:
             if st and st not in dv.STATES:
                 raise ValueError(f"--state {st}")
             rows = dv.listing(states=(st,) if st else ("new", "kept"), owner=owner, limit=int(a.get("limit") or 50))
-            items = [dict(dv._public(r), id=r["id"], ref=r["ref"] if r["kind"] == "url" else dv.mask_line(r["ref"], 300, strict=False))
+            items = [dict(dv._public(r), id=r["id"], ref=dv.mask_line(r["ref"], 300, strict=False))
                      for r in rows]
             return {"success": True, "message": "\n".join(self._deliv_line(r) for r in rows) or _("(nothing)", "（沒有）"),
                     "details": {"items": items}}
@@ -167,7 +171,7 @@ class DeliverablesApiMixin:
                 raise ValueError(_("a number, e.g. 12", "要給編號，例如 12")) from None
             r = dv.get(n)
             return {"success": True, "message": self._deliv_line(r),
-                    "details": dict(dv._public(r), id=r["id"], ref=r["ref"] if r["kind"] == "url" else dv.mask_line(r["ref"], 300, strict=False))}
+                    "details": dict(dv._public(r), id=r["id"], ref=dv.mask_line(r["ref"], 300, strict=False))}
         raise ValueError(_(f"unknown action: {action}", f"不認得的動作：{action}"))
 
     # ── the page ──────────────────────────────────────────────────────────
@@ -212,14 +216,23 @@ class DeliverablesApiMixin:
 
     # ── auto-pickup, at the end of a turn ───────────────────────────────────
     def _deliv_observe(self, out: dict) -> None:
-        """Once per status-monitor pass (api_status._notify_transitions): a tab whose turn just ended is read once.
-        Never raises, never waits: the read is on a thread of its own."""
+        """Once per status-monitor pass (api_status._notify_transitions): a tab that was seen working and is now done or idle
+        has finished a turn: it is read once (on a thread of its own). A tab first seen already done is a baseline, not a turn
+        (a restart must not read every tab). Never raises, never waits."""
         try:
-            tracker = self.__dict__.setdefault("_deliv_tracker", sf_notify.TransitionTracker())
-            tracker.prune(out.keys())
+            armed = self.__dict__.setdefault("_deliv_armed", {})
+            for sid in [k for k in armed if k not in out]:
+                del armed[sid]
             for sid, res in list(out.items()):
-                if tracker.observe(sid, res if isinstance(res, dict) else {}) == "DONE":
-                    threading.Thread(target=self._deliv_turn_end, args=(sid,), daemon=True, name=f"deliv-turn-{sid}").start()
+                state = (res.get("state") or "") if isinstance(res, dict) else ""
+                if state == "working":
+                    armed[sid] = True
+                elif state in ("done", "idle"):
+                    if armed.get(sid):
+                        armed[sid] = False
+                        threading.Thread(target=self._deliv_turn_end, args=(sid,), daemon=True, name=f"deliv-turn-{sid}").start()
+                    else:
+                        armed.setdefault(sid, False)
         except Exception:
             _swallow("deliv:observe")
 

@@ -3495,6 +3495,8 @@ window.__office = {
     for (const [u, v] of [[.5, .5], [.2, .5], [.8, .5], [.5, .2], [.5, .8], [.15, .2], [.85, .2], [.15, .8], [.85, .8]]) { const p = at(u, v); if (wallObjAt(p.x, p.y) === k && !pick(p.x, p.y)) return p; }
     return first;
   },
+  deskInfo: key => { const d = deliverInfo(M.ents.get(key)); return d ? { count: d.count, new: d.new, types: [...d.types] } : null; }, entGone: key => { const e = M.ents.get(key); return e ? !!e.gone : null; },
+  camTo: key => { const e = M.ents.get(key), p = e && deskTopOf(e); if (!p) return false; const q = P(p.x, p.y, p.z); goal = null; followCam = false; Object.assign(cam, { x: q.x, y: q.y, z: 1.5 }); kick(); return true; },
   pileAt: key => { const p = PILES.get(key); return p ? { x: p.x, y: p.y, r: p.r } : null; }, piles: () => [...PILES.keys()], pileTip: () => (hoverPile ? pileName(hoverPile) : ''),
   objects: () => OBJ.state(), objOpen: (id, o) => OBJ.open(id, o), objClose: () => OBJ.close(),
   objPoint: id => { const h = OBJ.hull('obj:' + id, t2s); if (!h.length) return null; return { x: h.reduce((a, p) => a + p.x, 0) / h.length, y: h.reduce((a, p) => a + p.y, 0) / h.length }; },

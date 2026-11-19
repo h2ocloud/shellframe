@@ -497,11 +497,8 @@ class Deliverables(oo.OfficeObject):
             return {"ok": False, "message": _("It has no open tab: wake it first.", "它現在沒有開著的分頁，先叫醒它。")}
         title = dv.mask_line(r["title"], 120, strict=False)
         where = dv.mask_line(r["ref"], 300, strict=False)
-        if r["flag"] == "secret":
-            where = os.path.basename(r["ref"].rstrip("/")) if r["kind"] == "file" else "(link)"
-        text = sf_lang.pick(f"(Deliverable) Please change {title}: {words}; it is at {where}",
-                 f"（交付物）請改{title}：{words}；檔案在{where}") if r["kind"] == "file" else sf_lang.pick(
-            f"(Deliverable) Please change {title}: {words}; the link is {where}", f"（交付物）請改{title}：{words}；連結在{where}")
+        # ONE form, in Chinese whatever the page's language is (the board's 「（看板）…」 lines are the same): a bot is told by protocol
+        text = f"（交付物）請改{title}：{words}；檔案在{where}"
         tell = {"to": key, "text": text}
         if r["task_id"]:
             tell["after"] = {"action": "ask_logged", "args": {"text": words}}

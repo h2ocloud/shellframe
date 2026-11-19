@@ -78,11 +78,15 @@ _URL = re.compile(r"https?://[^\s]+", re.I)
 # ── masking ──────────────────────────────────────────────────────────────────
 # office_objects.redact_text covers sk-…, Bearer, ghp_…, JWT, 32+ character runs, user:pass@ in a URL, `password: x`
 # and RSA/EC private key blocks. Three things it does not: KEY=value where the NAME holds KEY / TOKEN / SECRET /
-# PASSWORD (API_TOKEN=x: its \b never sees a word inside a name), a private key block of another shape (PGP), and the
+# PASSWORD (API_TOKEN=x: its \b never sees a word inside a name; `=` only), a private key block of another shape (PGP), and the
 # secret in a URL's query. Same line-by-line rule, line breaks kept.
 _MASK = oo._MASK
 _PEM = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY[A-Z0-9 ]*-----.*?(?:-----END [A-Z0-9 ]*PRIVATE KEY[A-Z0-9 ]*-----|\Z)", re.S)
-_NAMED = re.compile(r"(?i)(?<![\w.\-])([\w.\-]*(?:key|token|secret|pass(?:word|wd)?|pwd)[\w.\-]*[\"']?[ \t]*[=:][ \t]*[\"']?)"
+_NAMED = re.compile(r"(?i)(?<![\w.\-])([\w.\-]*(?:key|token|secret|password|passwd)[\w.\-]*[\"']?[ \t]*=[ \t]*[\"']?)"
+                    r"(?!<redacted>)([^\s\"'`,;&<>]+)")
+# `name: value` where the name says what it is (db_password: x, secret_key: x): the host's rule needs a word boundary before the
+# word, so it misses a name that starts with something else. Not a bare `key` / `token` / `pass`: "tokens: 300", "passed: 12" are prose.
+_COLON = re.compile(r"(?i)(?<![\w.\-])([\w.\-]*(?:password|passwd|secret|api[_-]?key|access[_-]?key|private[_-]?key)[\w.\-]*[\"']?[ \t]*:[ \t]*[\"']?)"
                     r"(?!<redacted>)([^\s\"'`,;&<>]+)")
 _QUERY = re.compile(r"(?i)([?&][\w.\-]*(?:key|token|secret|pass(?:word|wd)?|pwd|auth|sig(?:nature)?|credential)[\w.\-]*=)"
                     r"(?!<redacted>)[^&\s#\"'<>)\]]+")
@@ -94,6 +98,7 @@ def mask(text, strict=True) -> str:
     out = _PEM.sub(_MASK, str(text if text is not None else ""))
     out = _QUERY.sub(lambda m: m.group(1) + _MASK, out)
     out = _NAMED.sub(lambda m: m.group(1) + _MASK, out)
+    out = _COLON.sub(lambda m: m.group(1) + _MASK, out)
     return oo.redact_text(out, strict=strict)
 
 

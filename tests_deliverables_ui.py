@@ -369,6 +369,33 @@ def run(browser, base, engine):
     check("no horizontal scroll with the list open", not overflow_x(page))
     page.close()
 
+    print(f"{tag} the list and the paperclips at 1280 / 900 wide, interface sizes M and L")
+    for width in (1280, 900):
+        for scale in (1, 1.18):
+            lbl = f"{width} px, interface {'M' if scale == 1 else 'L'}"
+            page = new_page(browser, errors, width=width, height=820, office=False, style="chat")
+            page.evaluate("(s) => document.documentElement.style.setProperty('--ui-scale', String(s))", scale)
+            page.wait_for_function("document.body.classList.contains('sf-chat-shown')", timeout=10000)
+            page.wait_for_timeout(600)
+            if not page.evaluate("SFPending.state().drawer || SFPending.state().docked"):
+                page.click("#pend-cap")
+                page.wait_for_timeout(400)
+            page.wait_for_function("document.querySelectorAll('#pend-deliv .sfd-row').length > 0", timeout=10000)
+            page.click('#pend-deliv .sfd-row:not(.cand) .sfd-h')
+            page.wait_for_timeout(250)
+            m = page.evaluate("""() => { const p = document.getElementById('pend-panel').getBoundingClientRect(), s = document.getElementById('pend-deliv');
+                const rows = [...s.querySelectorAll('.sfd-row')].filter(r => r.getBoundingClientRect().width > 0);
+                const spill = rows.filter(r => r.scrollWidth > r.clientWidth + 1 || r.getBoundingClientRect().right > p.right + 1 || r.getBoundingClientRect().left < p.left - 1).length;
+                const btns = [...s.querySelectorAll('.sfd-row.open .sfd-b')].map(b => b.getBoundingClientRect());
+                let clash = 0; for (let i = 0; i < btns.length; i++) for (let j = i + 1; j < btns.length; j++) { const a = btns[i], b = btns[j]; if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1) clash++; }
+                const clips = [...document.querySelectorAll('#sidebar-sessions .sfd-clip, #sfb-primary .sfd-clip')].map(c => c.getBoundingClientRect()).filter(r => r.width > 0).map(r => r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight);
+                return {spill, clash, sw: document.documentElement.scrollWidth, iw: innerWidth, rows: rows.length, clips}; }""")
+            check(f"{lbl}: the section's cards and buttons stay inside the list, no overlap, no sideways scroll, the paperclips on screen",
+                  m["spill"] == 0 and m["clash"] == 0 and m["sw"] <= m["iw"] + 1 and m["rows"] > 3 and all(m["clips"]) and len(m["clips"]) >= 4, m)
+            if shoot and width == 900 and scale == 1:
+                page.screenshot(path=str(SHOTS / "deliverables-rail-drawer-900.png"))
+            page.close()
+
     seed()                                                        # the office part starts from the same desks
 
     # ── the office: desks, button, popup ────────────────────────────────────
@@ -391,6 +418,17 @@ def run(browser, base, engine):
     if shoot:
         fr.evaluate("__office.fit && __office.fit()")
         page.screenshot(path=str(SHOTS / "deliverables-desks-1280.png"))
+    res = fr.evaluate("__office.deskInfo('b:res')")
+    check("a bot with no open tab (resting) still has its pile on its own desk (2 on the desk: one new, one kept, the newest types first)",
+          res == {"count": 2, "new": 1, "types": ["html", "xlsx"]} and "b:res" not in LIVE, res)
+    fr.evaluate("__office.camTo('b:res')")
+    page.wait_for_timeout(700)
+    check("…and it is drawn there (the camera is on that desk)", "b:res" in fr.evaluate("__office.piles()"), fr.evaluate("__office.piles()"))
+    if shoot:
+        page.screenshot(path=str(SHOTS / "deliverables-desk-resting-bot-1280.png"))
+    fr.evaluate("__office.setArea('all', true)")
+    page.wait_for_timeout(700)
+    piles = fr.evaluate("__office.piles()")
     key = next((k for k in piles if k == "b:eng"), piles[0])
     pt = fr.evaluate("(k) => __office.pileAt(k)", key)
     page.mouse.move(pt["x"], pt["y"])

@@ -183,6 +183,10 @@ check("not truncated: a secret at the end of a long text is still masked and the
       dv.mask(long_doc).endswith("API_TOKEN=<redacted>\n") and len(dv.mask(long_doc)) > 15000)
 check("a truncated PEM block (no END line) masks to the end", "tail" not in dv.mask("a\n-----BEGIN RSA PRIVATE KEY-----\nbody\ntail"))
 check("masking twice changes nothing more", dv.mask(m) == m)
+check("a name that says what it is, with a colon (db_password: x, secret_key: x), is masked", dv.mask("db_password: hunter2") == "db_password: <redacted>"
+      and dv.mask("secret_key: abc") == "secret_key: <redacted>")
+for prose in ("passed: 12", "keyboard: us", "bypass=1", "the key is on the table", "5 tests passed"):
+    check(f"ordinary words are left alone by the extra rules: {prose!r}", dv.mask(prose) == prose, dv.mask(prose))
 check("a title is not eaten by the 32-character rule (a long slug stays readable)",
       dv.mask_line("demo-quarterly-report-2026-11-19-v2-final", 200, strict=False) == "demo-quarterly-report-2026-11-19-v2-final")
 check("…while body text is (a 40-character key run)", "<redacted>" in dv.mask("key " + "a" * 40))
