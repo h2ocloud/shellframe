@@ -44,13 +44,13 @@ def check(name, ok, detail=""):
 print("masking")
 text = ("# Demo notes\n\n- keep this line\n- password: hunter22\n- token = abcd1234efgh\n"
         "- repo https://demouser:s3cret@git.example.test/x.git\n- key sk-demo1234567890abcdef\n"
-        "- Authorization: Bearer abc.def.ghijklmnop\n- aws AKIAABCDEFGHIJKLMNOP\n"
-        "-----BEGIN RSA PRIVATE KEY-----\nMIIBOgIBAAJBAKj34GkxFhD90vcNLYLInFEX6Ppy1tPf9Cnzj4p4WGeKLs1Pt8Qu\n-----END RSA PRIVATE KEY-----\n"
+        "- Authorization: Bearer abc.def.ghijklmnop\n- aws AKIAIOSFODNN7EXAMPLE\n"
+        "-----BEGIN RSA PRIVATE KEY-----\nFAKEKEYBODYFORTESTSONLYxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n-----END RSA PRIVATE KEY-----\n"
         "after the block\n" + "-" * 40 + "\nplain line with a/path/to/file.md\n")
 red = oo.redact_text(text)
 check("line breaks survive", red.count("\n") == text.count("\n") - 2, red)
 for secret in ("hunter22", "abcd1234efgh", "s3cret", "sk-demo1234567890abcdef", "abc.def.ghijklmnop",
-               "AKIAABCDEFGHIJKLMNOP", "MIIBOgIBAAJBAKj34"):
+               "AKIAIOSFODNN7EXAMPLE", "FAKEKEYBODYFORTESTS"):
     check(f"hides {secret[:8]}…", secret not in red, red)
 check("ordinary text, a rule of dashes and a path stay", "keep this line" in red and "-" * 40 in red
       and "a/path/to/file.md" in red and "after the block" in red)
