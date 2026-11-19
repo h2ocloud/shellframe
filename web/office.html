@@ -2086,11 +2086,13 @@ function drawLobbyCalendar(x) {                    // 牆上的日曆：紅色�
 }
 
 // ── 字：時間、狀態、人 ──
-const ST_ZH = { todo: '待辦', doing: '進行中', waiting: '等待中' }, ST_COLOR = { todo: COL.dim, doing: COL.blue, waiting: COL.purple };
+const ST_ZH = { todo: '待辦', doing: '進行中', waiting: '等待中' }, ST_EN = { todo: 'To do', doing: 'In progress', waiting: 'Waiting' }, ST_COLOR = { todo: COL.dim, doing: COL.blue, waiting: COL.purple };
 const KIND_ZH = { created: '建立', status: '狀態', owner: '負責人', waiting_on: '在等', next_step: '下一步', title: '標題', due_at: '期限', note: '記錄', result: '結果', why: '原因', kind: '種類', parent_id: '上層' };
+const KIND_EN = { created: 'Created', status: 'Status', owner: 'Owner', waiting_on: 'Waiting for', next_step: 'Next step', title: 'Title', due_at: 'Due', note: 'Note', result: 'Result', why: 'Reason', kind: 'Type', parent_id: 'Parent' };
 const nowS = () => Date.now() / 1000;
 const mdhm = ms => { const d = new Date(ms); return `${d.getMonth() + 1}/${d.getDate()} ${hhmm(ms)}`; };
-function sinceWords(sec) { sec = Math.max(0, Math.round(sec)); return sec < 60 ? '剛剛' : sec < 3600 ? Math.floor(sec / 60) + ' 分鐘前' : sec < 86400 ? Math.floor(sec / 3600) + ' 小時前' : Math.floor(sec / 86400) + ' 天前'; }
+function sinceWords(sec) { sec = Math.max(0, Math.round(sec)); return sec < 60 ? tr('Just now', '剛剛') : sec < 3600 ? tr(`${Math.floor(sec / 60)} min ago`, `${Math.floor(sec / 60)} 分鐘前`) : sec < 86400 ? tr(`${Math.floor(sec / 3600)} hr ago`, `${Math.floor(sec / 3600)} 小時前`) : tr(`${Math.floor(sec / 86400)} days ago`, `${Math.floor(sec / 86400)} 天前`); }
+const ageWords = sec => { const w = sinceWords(sec); return isZh() ? w + '沒動' : `${w} idle`; };
 function everyWords(sec) { sec = Math.round(sec); if (sec <= 0) return ''; if (sec < 60) return `每 ${sec} 秒`; const m = Math.round(sec / 60); return m % 60 === 0 ? `每 ${m / 60} 小時` : `每 ${m} 分鐘`; }
 function cronWords(expr) {                          // 常見的幾種寫成白話；別的照原樣
   const f = String(expr || '').trim().split(/\s+/); if (f.length !== 5) return String(expr || '');
@@ -2116,20 +2118,20 @@ function cdText(next, status) {
 }
 const personEnt = key => { const e = key && key !== 'user' ? M.ents.get(key) : null; return e && !e.gone && !e.leaving ? e : null; };
 function whoBtn(key, raw) {                          // 辦公室裡有的人＝可以點的名牌；你；其他＝一般文字
-  if (key === 'user') return viewPeer() ? '<span class="who you">那台的使用者</span>' : '<span class="who you">你</span>';   // 隔壁電腦的任務：'user' 是坐在那台前面的人，不一定是你
+  if (key === 'user') return viewPeer() ? '<span class="who you">那台的使用者</span>' : `<span class="who you">${tr('You', '你')}</span>`;   // 隔壁電腦的任務：'user' 是坐在那台前面的人，不一定是你
   const e = personEnt(key);
   if (e && BOARD_ONLY) return `<span class="who"><img src="${avatarURL(e.who, 36)}" alt="">${esc(e.who.name)}</span>`;   // 只有白板：沒有辦公室可以跳過去看他
   if (e) return `<button type="button" class="who" data-act="person" data-key="${esc(key)}" title="看${esc(e.who.name)}"><img src="${avatarURL(e.who, 36)}" alt="">${esc(e.who.name)}</button>`;
   return raw ? `<span>${esc(raw)}</span>` : '<span style="color:var(--mute)">—</span>';
 }
-const actorName = a => { a = String(a || ''); if (a === 'user') return '你'; const e = M.ents.get('b:' + a); return e ? e.who.name : a; };
+const actorName = a => { a = String(a || ''); if (a === 'user') return tr('You', '你'); const e = M.ents.get('b:' + a); return e ? e.who.name : a; };
 const idleOf = (t, B = viewBoard()) => (t.idle_s ? t.idle_s + (nowS() - ((B && B.at) || M.boardAt)) : t.updated_at ? nowS() - t.updated_at : 0);
 const findTask = id => { const B = viewBoard(); return B ? B.all.find(t => t.id === id) : null; };
 
 // ── 任務看板：一塊白板，四欄便利貼（輕重緩急）──
 function evText(e) {
   const t = String(e.text || '');
-  return e.kind === 'status' ? t.replace(/\b(todo|doing|waiting|done|dropped)\b/g, w => ({ todo: '待辦', doing: '進行中', waiting: '等待中', done: '完成', dropped: '放棄' }[w])) : t;
+  return e.kind === 'status' ? t.replace(/\b(todo|doing|waiting|done|dropped)\b/g, w => isZh() ? ({ todo: '待辦', doing: '進行中', waiting: '等待中', done: '完成', dropped: '放棄' }[w]) : ({ todo: 'To do', doing: 'In progress', waiting: 'Waiting', done: 'Done', dropped: 'Dropped' }[w])) : t;
 }
 /* 輕重緩急：由資料「算」出來的，沒有人設定它（任務庫沒有優先順序欄位）。
      P1 緊急（紅）：在等你決定，或已逾期（期限 < 現在）
@@ -2138,6 +2140,9 @@ function evText(e) {
      P4 不急（藍）：待辦
    沒有期限（0 或 null）不算逾期。順序：等你決定 > 逾期 > 卡住 > 快到期 > 狀態。牆上的便利貼和打開的看板都用這一個函式。 */
 const PRIO = [null, { n: '緊急', col: '#ff8a8a' }, { n: '重要', col: '#ffb067' }, { n: '進行中', col: '#ffe066' }, { n: '不急', col: '#9fd6f2' }];
+const PRIO_EN = { 緊急: 'Urgent', 重要: 'Important', 進行中: 'In progress', 不急: 'To do' };
+const WHY_EN = { 等你決定: 'Waiting for your decision', 逾期: 'Overdue', 卡住: 'Stuck', 今天到期: 'Due today', 明天到期: 'Due tomorrow', 進行中: 'In progress', 等待中: 'Waiting', 待辦: 'To do' };
+const prioLabel = p => tr(PRIO_EN[PRIO[p].n] || PRIO[p].n, PRIO[p].n);
 const WHY_ORDER = ['等你決定', '逾期', '卡住', '今天到期', '明天到期', '進行中', '等待中', '待辦'];
 const dueOf = t => (Number(t.due_at) > 0 ? Number(t.due_at) : 0);
 function notePriority(t, now) {
@@ -2159,16 +2164,16 @@ function boardLanes(now, B = viewBoard()) {         // 四欄（緊急→不急�
 const laneSig = (lanes, now) => lanes.map(l => l.p + ':' + l.items.map(i => i.t.id + i.r.why + (dueOf(i.t) && dueOf(i.t) < now ? '!' : '')).join(',')).join(';');
 const tiltOf = id => (hashStr('n' + id) * 5 - 2.5).toFixed(2);   // 每張的歪斜由編號算出來（不能亂數：看板會重畫，便利貼不能跳）
 const peopleSig = () => [...M.ents.values()].map(e => e.key + (e.gone || e.leaving ? '!' : '') + e.who.name).join('|');
-const dueHtml = (t, now, long) => { const d = dueOf(t); return d ? `<span class="${d < now ? 'late' : ''}">${esc(mdhm(d * 1000))}${long && d < now ? '（已逾期）' : ''}</span>` : '<span class="dash">—</span>'; };
-const ageHtml = t => { const i = idleOf(t); return `<span class="age ${t.stuck ? 'old' : ''}" data-id="${t.id}">${i ? sinceWords(i) + '沒動' : '—'}</span>`; };
+const dueHtml = (t, now, long) => { const d = dueOf(t); return d ? `<span class="${d < now ? 'late' : ''}">${esc(mdhm(d * 1000))}${long && d < now ? tr(' (overdue)', '（已逾期）') : ''}</span>` : '<span class="dash">—</span>'; };
+const ageHtml = t => { const i = idleOf(t); return `<span class="age ${t.stuck ? 'old' : ''}" data-id="${t.id}">${i ? ageWords(i) : '—'}</span>`; };
 const WB_SQ = '<svg class="ul" viewBox="0 0 120 8" preserveAspectRatio="none" aria-hidden="true"><path d="M2 5 Q18 1 38 5 T76 4 T118 5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>';
-const whyText = w => (viewPeer() && w === '等你決定' ? '等使用者決定' : w);   // 隔壁電腦的決定，是那台的使用者要決定
+const whyText = w => viewPeer() ? (w === '等你決定' ? '等使用者決定' : w) : tr(WHY_EN[w] || w, w);   // 隔壁電腦的決定，是那台的使用者要決定
 function noteHtml({ t, r }, now) {
-  const dec = t.decision, who = dec ? `<span class="by">來自</span>${whoBtn(t.requester_key, t.requester)}` : whoBtn(t.owner_key, t.owner), ttl = t.title || '（沒有標題）';
+  const dec = t.decision, who = dec ? `<span class="by">${tr('From', '來自')}</span>${whoBtn(t.requester_key, t.requester)}` : whoBtn(t.owner_key, t.owner), ttl = t.title || tr('(No title)', '（沒有標題）');
   return `<div class="nt p${r.p} ${t.id % 2 ? 'tp' : 'mg'}" data-id="${t.id}" style="--tilt:${tiltOf(t.id)}deg">` +
     `<div class="nh"><span class="nid">#${t.id}</span><span class="why">${esc(whyText(r.why))}</span></div>` +
     `<button type="button" class="nb" data-act="note" data-id="${t.id}" title="${esc(ttl)}" aria-label="${esc(`#${t.id} ${ttl}，${whyText(r.why)}`)}"><span class="tt">${esc(ttl)}</span></button>` +
-    `<div class="nm"><div class="who1">${who}</div>${dueOf(t) ? `<div class="due">期限 ${dueHtml(t, now)}</div>` : ''}<div class="idl">${ageHtml(t)}</div></div></div>`;
+    `<div class="nm"><div class="who1">${who}</div>${dueOf(t) ? `<div class="due">${tr('Due', '期限')} ${dueHtml(t, now)}</div>` : ''}<div class="idl">${ageHtml(t)}</div></div></div>`;
 }
 function boardHtml() {
   const B = viewBoard(), pe = viewPeer();
@@ -2179,18 +2184,18 @@ function boardHtml() {
     if (!B || !B.all.length) return `<div class="wb wb-empty"><p class="big">${pe.bAt > 0 ? '那台現在沒有任務' : '還沒有讀到'}</p><p class="sm wpeer-state">${esc(msg)}</p></div>`;
   }
   if (!B || !B.all.length) return pe ? '<div class="wb wb-empty"><p class="big">還沒有任務</p><p class="sm">那台電腦的 bot 用 <code>sfctl task add</code> 記下手上的事，就會貼在這塊白板上。</p></div>'
-    : '<div class="wb wb-empty"><p class="big">還沒有任務</p><p class="sm">bot 用 <code>sfctl task add</code> 記下手上的事，就會貼在這塊白板上。</p></div>';
+    : `<div class="wb wb-empty"><p class="big">${tr('No tasks yet', '還沒有任務')}</p><p class="sm">${tr('Use <code>sfctl task add</code> to record a task; it will appear on this board.', 'bot 用 <code>sfctl task add</code> 記下手上的事，就會貼在這塊白板上。')}</p></div>`;
   const now = nowS(), lanes = boardLanes(now);
   const cols = lanes.map(l => `minmax(0,${(1 + Math.min(l.items.length, 8) * .35).toFixed(2)}fr)`).join(' ');
-  const key = `<ul class="wb-key" aria-label="顏色怎麼來的">` + [['紅', pe ? '等那台的使用者決定或逾期' : '等你決定或逾期'], ['橘', '卡住或 24 小時內到期'], ['黃', '進行中、等待中'], ['藍', '待辦']].map(([c, w], i) => `<li><i class="p${i + 1}"></i>${c}＝${w}</li>`).join('') + '</ul>';
+  const key = `<ul class="wb-key" aria-label="${tr('How the colors are assigned', '顏色怎麼來的')}">` + [['Red', pe ? 'Waiting for that user or overdue' : 'Waiting for your decision or overdue', '紅', pe ? '等那台的使用者決定或逾期' : '等你決定或逾期'], ['Orange', 'Stuck or due within 24 hours', '橘', '卡住或 24 小時內到期'], ['Yellow', 'In progress or waiting', '黃', '進行中、等待中'], ['Blue', 'To do', '藍', '待辦']].map(([en, wen, zh, wzh], i) => `<li><i class="p${i + 1}"></i>${tr(en, zh)} = ${tr(wen, wzh)}</li>`).join('') + '</ul>';
   const banner = pe && pe.boardState === 'error' ? `<p class="wpeer-banner wpeer-state">${esc(peerNotice(pe))}</p>` : '';
-  return `<div class="wb">${banner}${key}<div class="wb-lanes" style="--cols:${cols}">` + lanes.map(l => `<section class="wb-lane p${l.p}" aria-label="${PRIO[l.p].n}"><h3>${PRIO[l.p].n}<b class="cnt">${l.items.length}</b></h3>${WB_SQ}` +
-    (l.items.length ? `<div class="wb-notes">${l.items.map(i => noteHtml(i, now)).join('')}</div>` : '<p class="vempty wb-none">（沒有）</p>') + '</section>').join('') + '</div></div>';
+  return `<div class="wb">${banner}${key}<div class="wb-lanes" style="--cols:${cols}">` + lanes.map(l => `<section class="wb-lane p${l.p}" aria-label="${prioLabel(l.p)}"><h3>${prioLabel(l.p)}<b class="cnt">${l.items.length}</b></h3>${WB_SQ}` +
+    (l.items.length ? `<div class="wb-notes">${l.items.map(i => noteHtml(i, now)).join('')}</div>` : `<p class="vempty wb-none">${tr('(None)', '（沒有）')}</p>`) + '</section>').join('') + '</div></div>';
 }
 function boardSub() {
   const B = viewBoard(), pe = viewPeer(); if (pe && pe.boardState !== 'ok' && !(B && B.all.length)) return peerNotice(pe);
-  if (!B || !B.all.length) return '還沒有任務';
-  return boardLanes(nowS()).map(l => `${PRIO[l.p].n} ${l.items.length}`).join(' · ');
+  if (!B || !B.all.length) return tr('No tasks yet', '還沒有任務');
+  return boardLanes(nowS()).map(l => `${prioLabel(l.p)} ${l.items.length}`).join(' · ');
 }
 // 點開一張：便利貼「浮」到白板正中央，變成大張的卡（標題全文、負責／交辦自／在等／下一步／期限／動靜、歷程）。卡在 #vOver，不在 #vBody 裡：看板捲到哪裡，它都在蓋板正中間
 function peerTail(pe) {                              // 隔壁電腦的任務只能看：要改，請那台的主要 bot 處理（有辦法跟它說話就給一顆「跟 … 說」）
@@ -2202,17 +2207,17 @@ function peerTail(pe) {                              // 隔壁電腦的任務只
 const delivRow = t => { const o = !viewPeer() && OBJ.find('deliverables'), n = o && o.by_task ? Number(o.by_task[String(t.id)]) || 0 : 0; return n ? `<dt>${tr('Deliverables', '交付物')}</dt><dd><button type="button" class="wa dv" data-act="adeliv" data-id="${t.id}">${tr(`Deliverables ${n}`, `交付物 ${n}`)}</button></dd>` : ''; };
 function cardHtml(t, r, now) {
   const pe = viewPeer(), hist = vstate.detail.get(t.id), evs = hist && hist.ok ? hist.events : [];
-  const histHtml = pe ? '' : `<ol class="thist" aria-label="#${t.id} 的歷程">` + (!hist || hist.loading && !hist.ok ? '<li><span></span><span class="none">讀取中…</span></li>'
-    : !hist.ok ? `<li><span></span><span class="none">${esc(hist.message || '讀不到這件的歷程。')}</span></li>`
-    : evs.length ? evs.map(e => `<li><time>${esc(mdhm(e.ts * 1000))}</time><span><span class="k">${esc(KIND_ZH[e.kind] || e.kind)}</span><span class="a">${esc(actorName(e.actor))}</span><span class="tx">${esc(evText(e))}</span></span></li>`).join('')
-    : '<li><span></span><span class="none">還沒有紀錄。</span></li>') + '</ol>';
+  const histHtml = pe ? '' : `<ol class="thist" aria-label="${esc(tr(`#${t.id} history`, `#${t.id} 的歷程`))}">` + (!hist || hist.loading && !hist.ok ? `<li><span></span><span class="none">${tr('Loading…', '讀取中…')}</span></li>`
+    : !hist.ok ? `<li><span></span><span class="none">${esc(hist.message || tr('Could not load this task history.', '讀不到這件的歷程。'))}</span></li>`
+    : evs.length ? evs.map(e => `<li><time>${esc(mdhm(e.ts * 1000))}</time><span><span class="k">${esc(tr(KIND_EN[e.kind] || e.kind, KIND_ZH[e.kind] || e.kind))}</span><span class="a">${esc(actorName(e.actor))}</span><span class="tx">${esc(evText(e))}</span></span></li>`).join('')
+    : `<li><span></span><span class="none">${tr('No history yet.', '還沒有紀錄。')}</span></li>`) + '</ol>';
   const dash = '<span class="dash">—</span>';
-  return `<div class="wcard nt p${r.p}" role="dialog" aria-modal="true" aria-label="任務 #${t.id}">` +
-    `<div class="nh"><span class="nid">#${t.id}</span><span class="why">${esc(whyText(r.why))}</span><span class="st">${ST_ZH[t.status] || esc(t.status)}</span><button type="button" class="wx" data-act="dclose" title="收起來（Esc）" aria-label="收起來">${SFIcons.html('close')}</button></div>` +
-    `<h4 class="wt">${esc(t.title || '（沒有標題）')}</h4>` +
-    `<dl class="tm"><dt>負責</dt><dd>${whoBtn(t.owner_key, t.owner)}</dd><dt>交辦自</dt><dd>${whoBtn(t.requester_key, t.requester)}</dd><dt>在等</dt><dd>${t.waiting_on ? whoBtn(t.waiting_key, t.waiting_on) : dash}</dd>` +
-    `<dt>下一步</dt><dd>${esc(t.next_step || '—')}</dd><dt>期限</dt><dd>${dueHtml(t, now, true)}</dd><dt>動靜</dt><dd>${ageHtml(t)}</dd>${delivRow(t)}</dl>` +
-    (pe ? peerTail(pe) : `<h5 class="wh">歷程</h5>${histHtml}${actionsHtml(t)}`) + '</div>';
+  return `<div class="wcard nt p${r.p}" role="dialog" aria-modal="true" aria-label="${esc(tr(`Task #${t.id}`, `任務 #${t.id}`))}">` +
+    `<div class="nh"><span class="nid">#${t.id}</span><span class="why">${esc(whyText(r.why))}</span><span class="st">${ST_EN[t.status] ? tr(ST_EN[t.status], ST_ZH[t.status]) : esc(t.status)}</span><button type="button" class="wx" data-act="dclose" title="${esc(tr('Close (Esc)', '收起來（Esc）'))}" aria-label="${esc(tr('Close', '收起來'))}">${SFIcons.html('close')}</button></div>` +
+    `<h4 class="wt">${esc(t.title || tr('(No title)', '（沒有標題）'))}</h4>` +
+    `<dl class="tm"><dt>${tr('Owner', '負責')}</dt><dd>${whoBtn(t.owner_key, t.owner)}</dd><dt>${tr('Assigned by', '交辦自')}</dt><dd>${whoBtn(t.requester_key, t.requester)}</dd><dt>${tr('Waiting for', '在等')}</dt><dd>${t.waiting_on ? whoBtn(t.waiting_key, t.waiting_on) : dash}</dd>` +
+    `<dt>${tr('Next step', '下一步')}</dt><dd>${esc(t.next_step || '—')}</dd><dt>${tr('Due', '期限')}</dt><dd>${dueHtml(t, now, true)}</dd><dt>${tr('Activity', '動靜')}</dt><dd>${ageHtml(t)}</dd>${delivRow(t)}</dl>` +
+    (pe ? peerTail(pe) : `<h5 class="wh">${tr('History', '歷程')}</h5>${histHtml}${actionsHtml(t)}`) + '</div>';
 }
 // 卡底的兩個動作：「我做好了」（只有是你的事、或在等你的事才有）、「留言」。點了展開一個小表單；不先改畫面：送出去、後端說好了才算（板子隨後由下一輪 tasks_overview 更新）
 const isMe = (k, raw) => k === 'user' || raw === 'user';
@@ -2228,18 +2233,18 @@ function tellMiss(t, mode) {                         // 該讓他知道、卻告
   const c = tellTarget(t), raw = String(c.raw || '');
   if (!raw || isMe(c.key, c.raw) || tellOf(t, mode)) return null;
   const e = c.key ? personEnt(c.key) : null;          // 有這個人、卻送不到 = 他沒有開著的分頁（休息中、或分頁已關）
-  return { name: e ? e.who.name : raw, why: c.key ? '他現在沒有開著的分頁（在休息）' : '這台找不到這個名字的 bot 或分頁' };
+  return { name: e ? e.who.name : raw, why: c.key ? tr('Their tab is not open (they are away)', '他現在沒有開著的分頁（在休息）') : tr('No bot or tab with this name is open here', '這台找不到這個名字的 bot 或分頁') };
 }
 function actionsHtml(t) {
   const a = vstate.act && vstate.act.id === t.id ? vstate.act : null;
-  if (!a) return `<div class="wb-actions" data-slot="actions">${isDecision(t) ? '<button type="button" class="wa ok" data-act="areply">回覆</button>' : canDone(t) ? '<button type="button" class="wa" data-act="adone">我做好了</button>' : ''}<button type="button" class="wa" data-act="anote">留言</button></div>`;
+  if (!a) return `<div class="wb-actions" data-slot="actions">${isDecision(t) ? `<button type="button" class="wa ok" data-act="areply">${tr('Reply', '回覆')}</button>` : canDone(t) ? `<button type="button" class="wa" data-act="adone">${tr('Done', '我做好了')}</button>` : ''}<button type="button" class="wa" data-act="anote">${tr('Leave a note', '留言')}</button></div>`;
   const tl = tellOf(t, a.mode), miss = tl ? null : tellMiss(t, a.mode), dis = a.busy ? ' disabled' : '', reply = a.mode === 'reply';
-  return `<div class="wb-actions open" data-slot="actions"><form class="wform" novalidate><label class="wl" for="wText">${reply ? '你的決定或回答（要寫）。送出就把這件標成做好了。' : a.mode === 'done' ? '標成做好了。要補一句結果嗎？（可以不寫）' : '想留什麼話？（要寫）'}</label>` +
-    `<textarea id="wText" rows="3" maxlength="500"${reply ? ' placeholder="你的決定或回答" aria-required="true"' : ''}${dis}>${esc(a.text)}</textarea>` +
-    (tl ? `<label class="wtell"><input type="checkbox" data-tell${a.tell ? ' checked' : ''}${dis}> 也告訴 ${esc(tl.name)}</label>`
-      : miss ? `<div class="wtell wmiss" role="note">沒辦法通知 ${esc(miss.name)}：${esc(miss.why)}。會記在這張卡上，他看白板才會知道。</div>` : '') +
-    `<div class="wmsg${a.bad ? ' bad' : ''}" role="status">${esc(a.busy ? '送出中…' : a.msg)}</div>` +
-    `<div class="wrow"><button type="submit" class="wa ok"${dis}>${reply ? '送出回覆' : '確定'}</button><button type="button" class="wa" data-act="acancel"${dis}>取消</button><span class="wk">⌘/Ctrl + Enter 送出</span></div></form></div>`;
+  return `<div class="wb-actions open" data-slot="actions"><form class="wform" novalidate><label class="wl" for="wText">${reply ? tr('Write your decision or answer. Sending it marks this task done.', '你的決定或回答（要寫）。送出就把這件標成做好了。') : a.mode === 'done' ? tr('Mark it done. Add a result? (optional)', '標成做好了。要補一句結果嗎？（可以不寫）') : tr('What would you like to say? (required)', '想留什麼話？（要寫）')}</label>` +
+    `<textarea id="wText" rows="3" maxlength="500"${reply ? ` placeholder="${esc(tr('Your decision or answer', '你的決定或回答'))}" aria-required="true"` : ''}${dis}>${esc(a.text)}</textarea>` +
+    (tl ? `<label class="wtell"><input type="checkbox" data-tell${a.tell ? ' checked' : ''}${dis}> ${tr('Also tell', '也告訴')} ${esc(tl.name)}</label>`
+      : miss ? `<div class="wtell wmiss" role="note">${tr(`Could not notify ${miss.name}: ${miss.why}. It will be recorded on this card; they will see it on the board.`, `沒辦法通知 ${miss.name}：${miss.why}。會記在這張卡上，他看白板才會知道。`)}</div>` : '') +
+    `<div class="wmsg${a.bad ? ' bad' : ''}" role="status">${esc(a.busy ? tr('Sending…', '送出中…') : a.msg)}</div>` +
+    `<div class="wrow"><button type="submit" class="wa ok"${dis}>${reply ? tr('Send reply', '送出回覆') : tr('Confirm', '確定')}</button><button type="button" class="wa" data-act="acancel"${dis}>${tr('Cancel', '取消')}</button><span class="wk">${tr('⌘/Ctrl + Enter to send', '⌘/Ctrl + Enter 送出')}</span></div></form></div>`;
 }
 function openAct(id, mode) {
   const t = findTask(id); if (!t) return;
@@ -2253,19 +2258,19 @@ function cancelAct() {
 async function submitAct() {
   const a = vstate.act, t = a && findTask(a.id), H = boardHost(); if (!a || a.busy || !t) return;
   const text = a.text.trim(), fail = m => { a.busy = false; a.msg = m; a.bad = true; renderDetail(true); const ta = $('#vOver textarea'); if (ta) { try { ta.focus({ preventScroll: true }); } catch (e) {} } };
-  if (a.mode === 'note' && !text) { fail('要先寫點什麼。'); return; }
-  if (a.mode === 'reply' && !text) { fail('要先寫下你的決定或回答。'); return; }
-  if (!H || !H.act) { fail('這裡不能操作任務。'); return; }
+  if (a.mode === 'note' && !text) { fail(tr('Write something first.', '要先寫點什麼。')); return; }
+  if (a.mode === 'reply' && !text) { fail(tr('Write your decision or answer first.', '要先寫下你的決定或回答。')); return; }
+  if (!H || !H.act) { fail(tr('Tasks cannot be changed here.', '這裡不能操作任務。')); return; }
   a.busy = true; a.msg = ''; a.bad = false; renderDetail(true);
   let r = null; try { r = await H.act(a.id, a.mode === 'note' ? 'note' : 'done', text); } catch (err) { r = { success: false, message: String(err) }; }
-  if (!r || !r.success) { if (vstate.act === a) fail((r && r.message) || '沒有成功，稍後再試一次。'); else toast((r && r.message) || '沒有成功。'); return; }
-  toast(a.mode === 'reply' ? '已回覆' : a.mode === 'done' ? '已標成做好了' : '已留言');
+  if (!r || !r.success) { if (vstate.act === a) fail((r && r.message) || tr('It did not work. Try again later.', '沒有成功，稍後再試一次。')); else toast((r && r.message) || tr('It did not work.', '沒有成功。')); return; }
+  toast(a.mode === 'reply' ? tr('Reply sent', '已回覆') : a.mode === 'done' ? tr('Marked done', '已標成做好了') : tr('Note added', '已留言'));
   const tl = a.tell ? tellOf(t, a.mode) : null;                  // 也告訴對方：一行字，走辦公室對話的送出
   if (tl) { const ttl = String(t.title || '').slice(0, 40), line = HOST && HOST.board && HOST.board.lineOf ? HOST.board.lineOf(a.mode, t.id, t.title, text)   // 主頁（office.js）的那一份，右邊「待你決定」的回覆也用它；單獨開這一頁（示範）才用下面這份
       : a.mode === 'reply' ? `（看板）#${t.id}「${ttl}」我的回覆：${text}` : `（看板）#${t.id}「${ttl}」${a.mode === 'done' ? '我做好了' : '留言'}${text ? '：' + text : ''}`;
     let q = null; try { q = await tellChat().send(tl.key, line, false); } catch (err) { q = null; }
-    if (!q || q.success === false) toast(`已記下，但沒能告訴 ${tl.name}`); }
-  else { const m = tellMiss(t, a.mode); if (m) toast(`已記下，但沒辦法通知 ${m.name}`); }
+    if (!q || q.success === false) toast(tr(`Saved, but could not tell ${tl.name}`, `已記下，但沒能告訴 ${tl.name}`)); }
+  else { const m = tellMiss(t, a.mode); if (m) toast(tr(`Saved, but could not notify ${m.name}`, `已記下，但沒辦法通知 ${m.name}`)); }
   if (vstate.act === a) { vstate.act = null; renderDetail(true); }
 }
 function renderDetail(force) {
@@ -2668,7 +2673,7 @@ function calInput(ev) {
 // ── 檢視：開、關、畫 ──
 const VIEW_ICON = { board: '<svg width="20" height="20" viewBox="0 0 20 20"><rect x="2" y="3" width="16" height="12" rx="1.5" fill="#c8cde3"/><rect x="4" y="5" width="4" height="3.5" fill="#7aa2f7"/><rect x="9.5" y="5" width="4" height="3.5" fill="#f7768e"/><rect x="4" y="9.6" width="4" height="3.5" fill="#e0af68"/><rect x="9.5" y="9.6" width="4" height="3.5" fill="#9ece6a"/></svg>',
   cal: '<svg width="20" height="20" viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="14" rx="1.5" fill="#e6e9f5"/><rect x="3" y="3" width="14" height="4.5" rx="1.5" fill="#f7768e"/><rect x="5.5" y="9.5" width="3" height="2" fill="#9aa5ce"/><rect x="10" y="9.5" width="3" height="2" fill="#f7768e"/><rect x="5.5" y="13" width="3" height="2" fill="#9aa5ce"/></svg>' };
-const viewTitle = () => { const pe = viewPeer(); return pe ? `隔壁：${pe.name} 的白板` : WALL_OBJ[view].name; };
+const viewTitle = () => { const pe = viewPeer(); return pe ? `隔壁：${pe.name} 的白板` : view === 'board' ? tr('Task board', '任務看板') : WALL_OBJ[view].name; };
 function viewSub() {
   if (view === 'board') return boardSub();
   const d = SCHED.data; return `對話裡 ${M.loops.length} 個` + (d && d.ok && !d.unsupported && d.configured ? ` · 這台電腦 ${d.rows.filter(r => r.enabled).length}/${d.rows.length} 個啟用` : '');
@@ -2744,7 +2749,7 @@ function viewStep() {                                           // 每一幀：�
   const now = performance.now();
   if (now - vstate.tick >= 400) { vstate.tick = now; $$('#vBody .cd[data-ts], #calPop .cd[data-ts]').forEach(el => { const t = cdText(+el.dataset.ts, el.dataset.st); if (el.textContent !== t) el.textContent = t; });
     const sat = $('#vBody .sat'); if (sat && SCHED.data) { const w = hhmm(SCHED.data.at) + ' 更新'; if (sat.textContent !== w) sat.textContent = w; }
-    $$('#vBody .age[data-id], #vOver .age[data-id]').forEach(el => { const t = findTask(+el.dataset.id), i = t ? idleOf(t) : 0, w = i ? sinceWords(i) + '沒動' : '—'; if (el.textContent !== w) el.textContent = w; });
+    $$('#vBody .age[data-id], #vOver .age[data-id]').forEach(el => { const t = findTask(+el.dataset.id), i = t ? idleOf(t) : 0, w = i ? ageWords(i) : '—'; if (el.textContent !== w) el.textContent = w; });
     const pe = viewPeer(); if (pe) $$('#vBody .wpeer-state').forEach(el => { const w = peerNotice(pe); if (w && el.textContent !== w) el.textContent = w; }); }   // 「X 分鐘前」只改字
   if (view === 'board') { if (!viewPeer()) for (const id of vstate.open) { const t = findTask(id); if (t) loadDetail(id, t.updated_at); } }
   else { schedPoll(); if (now - CAL.tick >= 400) { CAL.tick = now; calNowLine(); } }
