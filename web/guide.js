@@ -280,7 +280,7 @@
     help.innerHTML = `<div class="sfg-help" role="dialog" aria-label="${t('Guide', '導覽')}">` +
       `<div class="sfg-help-head"><span>${t('Guide', '導覽')}</span>` +
       `<button class="sfg-btn primary" data-act="tour">${t('Take the tour', '看一次導覽')}</button>` +
-      `<button class="sfg-x" data-act="close" aria-label="${t('Close', '關閉')}">×</button></div>` +
+      `<button class="sfg-x" data-act="close" aria-label="${t('Close', '關閉')}">${SFIcons.html('close')}</button></div>` +
       (fresh.length ? `<div class="sfg-sec">${t('New since you last looked', '上次看過之後的新功能')}</div>` + fresh.map(row).join('') : '') +
       `<div class="sfg-sec">${t('Everything', '全部功能')}</div>` +
       data.features.filter(f => !isNew(f)).map(row).join('') + `</div>`;

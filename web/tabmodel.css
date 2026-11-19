@@ -63,3 +63,9 @@
 #tm-pop .tm-ask span { display: flex; gap: 4px; flex: none; }
 @media (max-width: 560px) { .tm-chip { max-width: 8em; } }
 body.sf-chat-shown #tm-slot { display: none; }   /* the chat view's header has the chip */
+
+/* icons (web/icons.js) */
+.tm-chip .sfi { width: 1em; height: 1em; vertical-align: -.15em; }
+.tm-chip i .sfi { width: .85em; height: .85em; vertical-align: -.1em; }
+.tm-opt .sfi { width: 1em; height: 1em; vertical-align: -.15em; margin-left: 2px; }
+.tm-x .sfi { width: 14px; height: 14px; vertical-align: -3px; }

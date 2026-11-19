@@ -77,9 +77,10 @@
   const viaName = v => (v && v.kind ? kindName(v.kind) + (v.adopted ? yours() : '') : '');
   // What was found for one way on this computer: [mark, English, 中文, tone]
   const FOUND = {
-    checked: ['✅', 'Checked, it works', '測過能通', 'ok'], found: ['🟡', 'Found, not tested', '找到了，還沒測', 'warn'],
-    broken: ['⚠', 'Found, not working', '找到但連不上', 'bad'], none: ['⚪', 'Not set up', '沒有設定', 'idle'],
+    checked: ['check-circle', 'Checked, it works', '測過能通', 'ok'], found: ['circle-dot', 'Found, not tested', '找到了，還沒測', 'warn'],
+    broken: ['warn', 'Found, not working', '找到但連不上', 'bad'], none: ['circle', 'Not set up', '沒有設定', 'idle'],
   };
+  const mark = f => SFIcons.html(f[0], { cls: 'sfi-lead' });      // the icon of a FOUND row; its colour is the tone's
   const WHY = {
     auth: ['it needs signing in or allowing', '要先登入或授權'], failed: ['its check failed', '檢查沒通過'],
     off: ['it is turned off', '被關掉了'], pending: ['waiting to be approved', '還沒被核准'],
@@ -93,7 +94,7 @@
     const p = ps.find(x => x.state === 'found') || ps[0];
     if (!p) return '';
     const f = FOUND[p.state];
-    return `${f[0]} ${t(f[1], f[2])}${t(': ', '：')}${kindName(p.kind)}${p.adopted ? yours() : ''}`;
+    return `${mark(f)} ${esc(t(f[1], f[2]) + t(': ', '：') + kindName(p.kind) + (p.adopted ? yours() : ''))}`;
   }
   const NOAPI = () => ({ success: false, code: 'no_api', message: { text: t('This version cannot do that here.', '這個版本在這裡做不到。'), next: '' } });
 
@@ -264,7 +265,7 @@
     } else {
       if (st.state === 'not_started') line = pick(e.summary) || line;
       if (bad && st.problem && st.problem.next) sub = `<small>${esc(pick(st.problem.next))}</small>`;
-      else if (st.state !== 'connected' && foundHint(st)) sub = `<small class="cg-found">${esc(foundHint(st))}</small>`;
+      else if (st.state !== 'connected' && foundHint(st)) sub = `<small class="cg-found">${foundHint(st)}</small>`;
       const cls = bad || st.state === 'failed' ? ' primary' : st.state === 'connected' ? ' ghost cg-done' : '';
       const label = st.state === 'connected' ? '✓ ' + t(s[3], s[4]) : t(s[3], s[4]);
       button = `<button type="button" class="cn-btn${cls}" data-cn="open" data-service="${esc(id)}">${esc(label)}</button>`;
@@ -278,7 +279,7 @@
   function bodyHtml() {
     if (!L.order.length) return `<p class="cn-empty">${esc(L.loaded ? t('No services to connect yet.', '目前沒有可以連結的服務。') : t('Reading…', '讀取中…'))}</p>`;
     return sections().map(sec => {
-      const right = sec.back ? `<button type="button" class="cn-link" data-cg="home">‹ ${esc(t('Back', '返回'))}</button>`
+      const right = sec.back ? `<button type="button" class="cn-link" data-cg="home">${SFIcons.html('chev-left', { cls: 'sfi-lead' })} ${esc(t('Back', '返回'))}</button>`
         : sec.all ? `<button type="button" class="cn-link" data-cg="all">${esc(t('See all', '查看全部'))}</button>` : '';
       const rows = sec.ids.map(rowHtml).join('');
       return `<section class="cg-sec" data-sec="${esc(sec.key)}"><div class="cg-sec-head"><h4>${esc(sec.title)}</h4>${right}</div>` +
@@ -523,12 +524,12 @@
       return `<div class="cn-warn"><b>${esc(pick(v.text) || t('It is waiting for you', '它在等你處理'))}</b>${v.next ? `<p>${esc(pick(v.next))}</p>` : ''}</div>`;
     }
     if (tt.ok) {
-      return `<div class="cn-result ok"><i class="cn-big ok" aria-hidden="true">✓</i><div><h4>${esc(t('Connected', '已連結'))}</h4>` +
+      return `<div class="cn-result ok"><i class="cn-big ok" aria-hidden="true">${SFIcons.html('check')}</i><div><h4>${esc(t('Connected', '已連結'))}</h4>` +
         `<p>${esc(t('The test passed', '測試通過了'))}${via ? ' · ' + esc(via) : ''}</p></div></div>`;
     }
     const v = verdictOf(tt.code) || (tt.message ? tt.message : null) || { text: t('The test did not pass', '測試沒有通過'), next: '' };
     const at = tt.failed_step ? vsteps().findIndex(x => x.id === tt.failed_step) : -1;
-    return `<div class="cn-result bad"><i class="cn-big bad" aria-hidden="true">✕</i><div><h4>${esc(pick(v.text))}</h4>` +
+    return `<div class="cn-result bad"><i class="cn-big bad" aria-hidden="true">${SFIcons.html('close')}</i><div><h4>${esc(pick(v.text))}</h4>` +
       (v.next ? `<p>${esc(pick(v.next))}</p>` : '') + (at >= 0 ? `<p class="cn-dim">${esc(t(`It points at step ${at + 1}.`, `看起來是第 ${at + 1} 步沒做好。`))}</p>` : '') + '</div></div>';
   }
   function testFoot(step) {
@@ -587,7 +588,7 @@
     const p = protos(S.status).find(x => x.id === id);
     if (!p || p.state === 'none') return '';
     const f = FOUND[p.state] || FOUND.none;
-    return `<span class="cn-route-found tone-${f[3]}" data-found="${esc(p.state)}">${f[0]} ${esc(t(f[1], f[2]))}${p.adopted ? esc(yours()) : ''}</span>`;
+    return `<span class="cn-route-found tone-${f[3]}" data-found="${esc(p.state)}">${mark(f)} ${esc(t(f[1], f[2]))}${p.adopted ? esc(yours()) : ''}</span>`;
   }
   // Every way to connect the service, with what was found for it on this computer and where ShellBot's own steps are.
   function protocolsBox(st) {
@@ -604,7 +605,7 @@
         : t(`ShellBot's setup: ${stateOf(su)[0].toLowerCase()}`, `ShellBot 的設定：${stateOf(su)[1]}`);
       const go = su && !inUse && st.state === 'connected' ? link('resume', t('Continue it', '接著做') + ' ›', ` data-route="${esc(p.id)}"`) : '';
       return `<div class="cn-proto tone-${f[3]}${inUse ? ' on' : ''}" data-route="${esc(p.id)}" data-found="${esc(p.state)}">` +
-        `<span class="cn-proto-mark" aria-hidden="true">${f[0]}</span>` +
+        `<span class="cn-proto-mark" aria-hidden="true">${SFIcons.html(f[0])}</span>` +
         `<span class="cn-proto-main"><b>${esc(kindName(p.kind) || pick(r.name))}${inUse ? `<i class="cn-badge">${esc(t('In use', '使用中'))}</i>` : ''}</b>` +
         `<small>${esc([pick(r.name), where, why, setup].filter(Boolean).join(' · '))}</small>${go}</span>` +
         `<span class="cn-proto-state">${esc(t(f[1], f[2]))}</span></div>`;
@@ -655,7 +656,7 @@
       return `<i>${esc(sc ? pick(sc.label) : id)}</i>`;
     }).join('');
     const warn = st.problem ? `<div class="cn-msg warn"><span class="cn-dot warn"></span><span>${esc(pick(st.problem.text))}${st.problem.next ? `<small>${esc(pick(st.problem.next))}</small>` : ''}</span></div>` : '';
-    return `<div class="cn-result ok"><i class="cn-big ok" aria-hidden="true">✓</i><div><h4>${esc(t('Connected', '已連結'))}</h4>` +
+    return `<div class="cn-result ok"><i class="cn-big ok" aria-hidden="true">${SFIcons.html('check')}</i><div><h4>${esc(t('Connected', '已連結'))}</h4>` +
       `<p>${esc([st.via ? viaName(st.via) : route ? pick(route.name) : '', st.connected_at ? dateOf(st.connected_at) : ''].filter(Boolean).join(' · '))}</p></div></div>` + warn +
       (S.test ? testBlock(null) : '') + errBox() +
       (clis ? `<div class="cn-sect"><b>${esc(t('Your AIs', '各個 AI'))}</b>${clis}</div>` : '') +
@@ -670,7 +671,7 @@
         `ShellBot 在 ${where} 裡找到「${v.entry}」，照原樣使用：不會改它，也不會刪它。它能做哪些事由你的設定決定，不一定是唯讀。`)
       : t(`${where} reports it as connected. It was not set up in ShellBot.`, `${where} 回報它已經連上；不是在 ShellBot 裡設定的。`) +
         (v.kind === 'claude_connector' ? t(' Only Claude tabs can use it.', '只有 Claude 分頁用得到。') : '');
-    return `<div class="cn-result ok"><i class="cn-big ok" aria-hidden="true">✓</i><div><h4>${esc(t('Connected', '已連結'))}</h4>` +
+    return `<div class="cn-result ok"><i class="cn-big ok" aria-hidden="true">${SFIcons.html('check')}</i><div><h4>${esc(t('Connected', '已連結'))}</h4>` +
       `<p>${esc(viaName(v))}</p></div></div>` +
       `<div class="cn-fyi"><b>${esc(v.adopted ? t('Your own setting', '你自己的設定') : t('Found on this computer', '在這台電腦上找到的'))}</b><p>${esc(note)}</p></div>` +
       errBox() + protocolsBox(st);
@@ -679,7 +680,7 @@
   function progress() {
     if (S.mode !== 'step') return '';
     const steps = vsteps(), cur = stepIdx();
-    const back = `<button type="button" class="cn-back" data-act="back" aria-label="${esc(t('Back', '上一步'))}" title="${esc(t('Back', '上一步'))}"${S.busy || (cur <= 0 && routes().length <= 1) ? ' disabled' : ''}>‹</button>`;
+    const back = `<button type="button" class="cn-back" data-act="back" aria-label="${esc(t('Back', '上一步'))}" title="${esc(t('Back', '上一步'))}"${S.busy || (cur <= 0 && routes().length <= 1) ? ' disabled' : ''}>${SFIcons.html('chev-left')}</button>`;
     const passed = !!(S.test && S.test.ok);
     const segs = steps.map((s, i) => {
       const cls = /fail|bad/.test(String(s.state || '')) ? 'bad' : (passed || i < cur) ? 'done' : i === cur ? 'now' : '';
@@ -726,7 +727,7 @@
     else body = stepBody();
     card.dataset.mode = S.mode === 'step' ? (isTest(vstep()) ? 'test' : S.stuck ? 'stuck' : 'step') : S.mode;
     card.innerHTML = `<div class="cn-head"><span class="cn-head-ico">${icon(st && st.icon)}</span><h2>${esc(name)}</h2><span class="cn-sub">${esc(sub)}</span>` +
-      `<button type="button" class="cn-x" data-act="close" aria-label="${esc(t('Close', '關閉'))}" title="${esc(t('Close', '關閉'))}">×</button></div>` +
+      `<button type="button" class="cn-x" data-act="close" aria-label="${esc(t('Close', '關閉'))}" title="${esc(t('Close', '關閉'))}">${SFIcons.html('close')}</button></div>` +
       progress() + `<div class="cn-body">${body}</div>` +
       (S.mode === 'load' ? '' : `<div class="cn-foot">${foot()}</div>`);
     if (focusKey) {
@@ -1083,7 +1084,7 @@
       const key = esc(s.service + ':' + s.state);
       return `<div class="cn-sc" role="alert"><div class="cn-sc-text"><b><i class="cn-sc-dot"></i>${esc(s.state === 'failed' ? t(`${name} did not connect`, `${name} 沒連結成功`) : t(`${name} needs reconnecting`, `${name} 需要重新連結`))}</b>` +
         `<span>${esc(pick(s.problem && s.problem.text) || t('Bots cannot use it right now.', 'bot 現在用不了它。'))}</span></div>` +
-        `<button type="button" class="cn-sc-x" data-cn-dismiss="${key}" aria-label="${esc(t('Hide', '先不要'))}" title="${esc(t('Hide until it changes', '先收起來，狀況有變再提醒'))}">×</button>` +
+        `<button type="button" class="cn-sc-x" data-cn-dismiss="${key}" aria-label="${esc(t('Hide', '先不要'))}" title="${esc(t('Hide until it changes', '先收起來，狀況有變再提醒'))}">${SFIcons.html('close')}</button>` +
         `<button type="button" class="cn-btn small primary" data-cn-side="${esc(s.service)}">${esc(s.state === 'failed' ? t('Fix it', '處理') : t('Reconnect', '重新連結'))}</button></div>`;
     }).join('') + (items.length > 2 ? `<div class="cn-sc-more">${esc(t(`${items.length - 2} more in Settings → Connect`, `另外 ${items.length - 2} 項，到 設定 › 連結 看`))}</div>` : '');
     if (sideEl.dataset.html !== html) { sideEl.innerHTML = html; sideEl.dataset.html = html; }

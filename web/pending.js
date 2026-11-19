@@ -323,7 +323,7 @@
     cap.setAttribute('aria-label', cap.title);
     const headHtml = `${esc(t('Waiting on you', '待你決定'))}<b class="pend-n${red ? ' on' : ''}" data-n="${red}">${red > 99 ? '99+' : red}</b>`;
     if (last.head !== headHtml) { last.head = headHtml; headN.innerHTML = headHtml; }
-    panel.querySelector('.pend-x').textContent = docked ? '»' : '✕';
+    panel.querySelector('.pend-x').innerHTML = docked ? SFIcons.html('chev-right') : SFIcons.html('close');
     panel.querySelector('.pend-x').title = docked ? t('Fold to the edge', '收到邊邊') : t('Close (Esc)', '關閉（Esc）');
     if (armed && lastTotal === 0 && total > 0 && !open && !docked) { cap.classList.remove('pulse'); void cap.offsetWidth; cap.classList.add('pulse'); }   // 0 → something: one pulse, no sound
     lastTotal = total;
