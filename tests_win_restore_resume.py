@@ -123,6 +123,14 @@ m = {e["sid"]: e for e in cfg()["session_manifest"]}
 check("the hook's uuid is in the manifest (s1), the spawn uuid for the tab that never reported (s2)",
       m["s1"]["claude_session_id"] == U2 and m["s2"]["claude_session_id"] == s2.session_id and "claude_session_id" not in m["s3"], m)
 spawn2 = s2.session_id
+# /resume in a tab fires only SessionStart (no prompt, no tool, no stop): it must still record the conversation, with no state
+check("SessionStart is one of the installed hook events (so /resume and /clear are seen)", "SessionStart" in Api._HOOK_EVENTS, Api._HOOK_EVENTS)
+before_state = (a1._hook_events.get("s1") or {}).get("state")
+r = a1._on_agent_event({"sid": "s1", "event": "SessionStart", "session_id": U3, "transcript_path": ""})
+check("a SessionStart (/resume) records the tab's new conversation in the manifest, and changes no state",
+      {e["sid"]: e for e in cfg()["session_manifest"]}["s1"]["claude_session_id"] == U3
+      and (a1._hook_events.get("s1") or {}).get("state") == before_state and "ignored" in str(r.get("message", "")), (r, before_state))
+a1._on_agent_event({"sid": "s1", "event": "Stop", "session_id": U2, "transcript_path": ""})     # back to U2 for what follows
 
 a2 = make_api()                                   # ShellBot started again: no tabs yet
 import inspect  # noqa: E402

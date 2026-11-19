@@ -3220,7 +3220,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
 
     # ── Hook-driven agent status (exact, event-based) ────────────────────
     _HOOK_TTL = 1800.0   # hook state stays authoritative this long after the last event
-    _HOOK_EVENTS = ("UserPromptSubmit", "PreToolUse", "Stop", "Notification", "StopFailure")
+    _HOOK_EVENTS = ("UserPromptSubmit", "PreToolUse", "Stop", "Notification", "StopFailure", "SessionStart")   # SessionStart: /resume and /clear switch the conversation with no other event
     _CLAUDE_SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 
     def get_config(self) -> str:
