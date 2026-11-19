@@ -243,8 +243,8 @@ def run(browser, engine):
     print(f"[{engine}] 3. a bot's row in the sidebar")
     page, errors = open_page(browser)
     row_edit = page.locator('#sidebar-sessions .sb-item[data-sid="s2"] .sfb-edit')
-    check("an awake bot's row has a hidden ✎ that shows when the row is under the pointer (the latest line is still the line's own text)",
-          row_edit.count() == 1 and row_edit.inner_text() == "✎"
+    check("an awake bot's row has a hidden edit (pencil) icon that shows when the row is under the pointer (the latest line is still the line's own text)",
+          row_edit.count() == 1 and row_edit.inner_text().strip() == "" and row_edit.locator("svg.sfi").count() == 1 and bool(row_edit.get_attribute("aria-label"))
           and (page.locator('#sidebar-sessions .sb-item[data-sid="s2"]').hover() or row_edit.is_visible())
           and page.locator('#sidebar-sessions .sb-item[data-sid="s2"] .sfb-sub').inner_text() == "Editing relay.py")
     check("…its name and the Bot tag are still whole", page.locator('#sidebar-sessions .sb-item[data-sid="s2"] .sfb-name').inner_text() == "寫程式Bot"
@@ -265,7 +265,7 @@ def run(browser, engine):
           and page.evaluate("document.querySelector('#sidebar-sessions .sb-item.active').dataset.sid") == "s3" and active in ("s2", "s3"))
     close_editor(page)
     sleeper_edit = page.locator('.sfb-sleeper[data-sfb-role="研究"] .sfb-edit')
-    check("a sleeping bot's row has Edit beside Wake", sleeper_edit.count() == 1 and sleeper_edit.inner_text() == "✎"
+    check("a sleeping bot's row has Edit beside Wake", sleeper_edit.count() == 1 and sleeper_edit.inner_text().strip() == "" and sleeper_edit.locator("svg.sfi").count() == 1
           and page.locator('.sfb-sleeper[data-sfb-role="研究"] .sfb-wake').count() == 1)
     page.evaluate("window.__calls.length = 0")
     sleeper_edit.click()
@@ -483,8 +483,8 @@ def run(browser, engine):
     page.locator("#sidebar-sessions .sfb-add").click()
     page.wait_for_selector(".sfb-modal #sfb-ed-name")
     note = page.inner_text(".sfb-modal .sfb-where")
-    check("the creation editor ends with where it is changed later: the row's Edit (the card's ✎), a right-click on the face, Settings → Bots",
-          "側欄那一列的「編輯」" in note and "卡片的 ✎" in note and "右鍵它的頭像" in note and "設定 → Bots" in note, note)
+    check("the creation editor ends with where it is changed later: the row's Edit (the card's pencil), a right-click on the face, Settings → Bots",
+          "側欄那一列的「編輯」" in note and "卡片上的鉛筆" in note and "右鍵它的頭像" in note and "設定 → Bots" in note, note)
     page.locator(".sfb-modal .modal").screenshot(path=str(SHOTS / f"botset-create-note{tag}.png"))
     page.fill("#sfb-ed-name", "新的助手")
     page.click(".sfb-modal [data-act='save']")
