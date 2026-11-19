@@ -110,7 +110,7 @@ def run(browser, base, engine):
     errors = []
 
     def new_page(w=1280, h=800, q=""):
-        page = browser.new_page(viewport={"width": w, "height": h})
+        page = browser.new_page(locale="zh-TW", viewport={"width": w, "height": h})
         page.on("pageerror", lambda e: errors.append(f"pageerror {e}"))
         page.on("console", lambda m: errors.append(f"console {m.text}") if m.type == "error" else None)
         page.goto(base + "/office.html" + q)

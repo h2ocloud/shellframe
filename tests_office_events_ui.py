@@ -59,7 +59,7 @@ FEED = """(() => {
 
 def run(browser, base, engine):
     shoot = engine == "chromium"
-    page = browser.new_page(viewport={"width": 1280, "height": 800})
+    page = browser.new_page(viewport={"width": 1280, "height": 800}, locale="zh-TW")
     errors = []
     page.on("pageerror", lambda e: errors.append(f"pageerror {e}"))
     page.on("console", lambda m: errors.append(f"console {m.text}") if m.type == "error" else None)
