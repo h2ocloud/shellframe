@@ -916,7 +916,7 @@
            names on hover (four stacked rows read as clutter at the sidebar's foot). Same ids and
            data-guide marks as before, so their handlers and the guide's pointers are unchanged. -->
       <div id="sb-footer-row">
-        <button class="sb-footer-btn" id="btn-settings" data-guide="settings"><span style="opacity:.5" class="sb-gear" data-sfi="settings"></span> <span data-i18n="settings">Settings</span></button>
+        <button class="sb-footer-btn" id="btn-settings" data-guide="settings" data-i18n-title="settings" aria-label="Settings" title="Settings"><span style="opacity:.5" class="sb-gear" data-sfi="settings"></span> <span data-i18n="settings">Settings</span></button>
         <button class="sb-footer-btn sb-footer-ico" id="btn-guide" data-guide="guide" data-i18n-title="guideBtn" aria-label="Guide" title="Guide"><span class="sb-ico" data-sfi="sparkle"></span><span class="sb-ico-label" data-i18n="guideBtn">Guide</span></button>
         <!-- 說明書放在「關於」裡面等於沒放：要有人記得去翻才會用到。這顆直接
              開到那一段，順便顯示它有沒有裝進 AI 會自己讀的地方。 -->
@@ -3375,7 +3375,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           head.title = t('mobileDevicesTitle');
           const on = mobiles.filter(m => m.reachable).length;
           head.innerHTML = `<span class="sb-chev" style="pointer-events:none">${SFIcons.html(open ? 'chev-down' : 'chev-right')}</span>` +
-            `<span class="sb-label" style="pointer-events:none">${SFIcons.html('phone', { cls: 'sfi-lead' })} 行動裝置</span>` +
+            `<span class="sb-label" style="pointer-events:none">${SFIcons.html('phone', { cls: 'sfi-lead' })} ${t('mobileDevices')}</span>` +
             `<span class="sb-mobile-count">${mobiles.length}${on ? ` · ${tf('mobileOnline', {count: on})}` : ''}</span>`;
           container.appendChild(head);
           if (open) mobiles.forEach(m => {
