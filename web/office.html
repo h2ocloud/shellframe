@@ -3349,7 +3349,7 @@ function applyScale() {
   if (applyScale.v !== s) { applyScale.v = s; document.documentElement.style.setProperty('--ui', String(s)); fitChrome(); }
 }
 applyScale();
-function goLive() { if (!DEMO.live) return; DEMO.live = false; document.body.classList.add('live-data'); $('#tag').textContent = '實驗性'; }
+function goLive() { if (!DEMO.live) return; DEMO.live = false; document.body.classList.add('live-data'); $('#tag').textContent = tr('Experimental', '實驗性'); }
 let boardShown = false;
 // 從主頁「待你決定」點進來：直接開在那一張卡（focus.task），或那台隔壁電腦的白板（focus.peer）。openView 是開關，所以已經開著的那塊不再叫它。
 function applyFocus(f) {
