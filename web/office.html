@@ -2023,8 +2023,13 @@ M.board = null; M.notes = []; M.boardVer = 0; M.notesAt = 0; M.boardJson = ''; M
 const WALL_OBJ = { board: { name: '任務看板', q: [1.4, 0, 4.9, 0, 0, 1, 28, 60] }, cal: { name: '排程', q: [5.1, 0, 5.9, 0, 0, 1, 38, 64] } };
 // 牆邊的家具（書櫃、人事檔案櫃…）：每件是一個「辦公室物件」（office_objects.py 的宣告＋四個掛鉤），畫法、蓋板（共用的彈出視窗）在 web/office_objects.js；
 // 這裡只接線：牆上的東西是 'obj:<id>'，點到、或按右下角同名的按鈕，開同一種蓋板。標題字、字樣都由主頁（HOST.objects）給，已是這一頁的語言。
+// Where the lobby's objects may stand on the back wall: clear of the counter (5.6–7.1, under the calendar), of the secretary's
+// rug and desk (8.9–12.6, the lamp at its left), and of the plant in the corner (13.25). One between the counter and the rug,
+// one behind the secretary at the right, like a file cabinet behind a desk (reported: the bookshelf stood inside the counter).
+// tests_office_furniture_ui.py checks every lobby footprint against the others, these included.
+const OBJ_SLOTS = [[7.45, 8.65], [11.6, 12.6]];
 const OBJ = OfficeObjects.create({
-  tr, doc: document, kick: () => kick(),
+  tr, doc: document, kick: () => kick(), slots: OBJ_SLOTS,
   host: HOST ? { objects: HOST.objects, md: HOST.md } : OfficeObjects.demoHost(tr),
   beforeOpen() { if (view) closeView(true); if (follow) stopFollow(true); hoverObj = null; hoverKey = null; cv.classList.remove('pt'); },
   hasTab: key => !!(HOST && HOST.chat && HOST.chat.has(key)),
@@ -3589,6 +3594,14 @@ window.__office = {
   chat: () => ({ key: chat.key, rev: chat.rev, items: chat.data ? chat.data.items.length : 0, tab: panelTab, sending: chat.sending }),
   entScreen: key => { const e = M.ents.get(key), h = e && headTop(e); return h ? { x: h.x, y: (h.y + h.base.y) / 2 } : null; },
   seatScreen: key => { const s = M.seats.get(key), g = s && geo(s); if (!g) return null; const p = t2s(g.cx, g.cy, 10); return { x: p.x, y: p.y - 12 * cam.z }; },
+  // The lobby's floor and wall, for the layout test: furniture (decor), the secretary's desk, the interns' tables and the
+  // objects as floor rectangles {id, x0, x1, y0, y1, z0, z1}; the boards on the back wall as {id, x0, x1, z0, z1}; walkway points.
+  lobbyLayout: () => { const r = M.rooms.get('lobby'); const floor = [];
+    for (const d of decorOf(r)) floor.push({ id: 'decor:' + d.kind + '@' + d.x, x0: d.x, x1: d.x + d.w, y0: d.y, y1: d.y + d.h, z0: 0, z1: ({ shelf: 48, counter: 40, sofa: 21, plant: 30, rack: 44 })[d.kind] || 30 });   // drawDecor's heights (the counter's machine on top)
+    for (const s of M.seats.values()) if (s.room === 'lobby') floor.push({ id: 'seat:' + s.key, x0: s.lx, x1: s.lx + s.w, y0: s.ly, y1: s.ly + s.h, z0: 0, z1: 20 });
+    for (const f of OBJ.footprints()) floor.push(f);
+    const wall = Object.entries(WALL_OBJ).map(([id, o]) => ({ id, x0: o.q[0], x1: o.q[2], z0: o.q[6], z1: o.q[7] }));
+    return { w: r.w, h: r.h, floor, wall, rug: { x0: 8.9, x1: 12.6, y0: .5, y1: 4.25 } }; },
   pause: on => { DEMO.paused = !!on; kick(); }, follow: key => startFollow(key), unfollow: () => stopFollow(), setMode: (m, i) => setMode(m, i), setArea: (id, i) => setArea(id, i),
   forceIdle: () => { lastInput = performance.now() - IDLE_AFTER - 1; goal = null; }, isActive: () => active(), busy: () => busy(), cam: () => ({ ...cam }), lod: () => lodFar ? 'far' : 'near',
   addBots: n => addBots(n), setTemps: n => { while (DB.temps.length < n) { const k = sim.tempN++; DB.temps.push({ id: 'tmp' + k, name: '臨時 #' + k, cli: '示範 CLI-' + 'ABC'[k % 3], state: 'working', opened_at: iso(clockMs() + k), task: { id: '—', title: TEMP_TASKS[k % 5], status: 'doing', next: '做完就關分頁' }, events: [], _lock: 1e9 }); } while (DB.temps.length > n) DB.temps.pop(); push(); },

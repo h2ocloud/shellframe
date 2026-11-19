@@ -52,18 +52,25 @@
     const guideOf = id => id;
 
     // ── the furniture ────────────────────────────────────────────────────────
-    function place() {                                      // id → {x0, x1, kind}: left to right along the back wall, in declaration order
-      const out = {};
-      let x = WALL_X0;
+    // Where furniture may stand: [x0, x1] stretches of the lobby's back wall that the office page keeps free of its own
+    // furniture, the wall's boards and the walkways (env.slots; reported: the bookshelf stood inside the counter). Each piece
+    // goes into the first stretch with room left, in declaration order; one that fits nowhere gets no furniture (its
+    // toolbar button still opens it).
+    const SLOTS = Array.isArray(E.slots) && E.slots.length ? E.slots.map(s => [Number(s[0]), Number(s[1])]) : [[WALL_X0, WALL_X1]];
+    function place() {                                      // id → {x0, x1, kind}
+      const out = {}, next = SLOTS.map(s => s[0]);
       for (const o of objs) {
         if (o.place === 'button') continue;                      // no furniture: only the toolbar button (the deliverables' desks are on the people's desks)
         const k = KINDS[o.furniture] || KINDS.generic;
-        if (x + k.w > WALL_X1) break;
-        out[o.id] = { x0: x, x1: x + k.w, k };
-        x += k.w + GAP;
+        const i = SLOTS.findIndex((s, j) => next[j] + k.w <= s[1] + 1e-9);
+        if (i < 0) continue;
+        out[o.id] = { x0: next[i], x1: next[i] + k.w, k };
+        next[i] += k.w + GAP;
       }
       return out;
     }
+    // Each piece's floor rectangle against the back wall (y 0 to its depth) and its height: what the office checks for overlaps.
+    const footprints = () => Object.entries(place()).map(([id, p]) => ({ id: 'obj:' + id, x0: p.x0, x1: p.x1, y0: 0, y1: p.k.d, z0: p.k.z0 || 0, z1: (p.k.z0 || 0) + p.k.h }));
     const keys = () => Object.keys(place()).map(id => 'obj:' + id);
     const wall = k => { const o = find(String(k).slice(4)); return o ? { name: o.title, room: 'lobby' } : null; };
     function corners(p) {
@@ -463,7 +470,7 @@
 
     // what an object said per person (its summary's `by_owner`): the office draws a pile on each desk from it
     const byOwner = (id, key) => { const o = find(id); return (o && o.by_owner && o.by_owner[key]) || null; };
-    return { setObjects, keys, wall, hull, draw, open, close, esc: esc2, isOpen: () => !!S, find, guideOf, byOwner,
+    return { setObjects, keys, wall, hull, draw, open, close, esc: esc2, isOpen: () => !!S, find, guideOf, byOwner, footprints,
              state: () => ({ open: S ? S.id : null, objects: objs.map(o => ({ id: o.id, title: o.title, badge: o.badge, furniture: o.furniture, place: o.place, onWall: Object.prototype.hasOwnProperty.call(place(), o.id) })) }) };
   }
 
