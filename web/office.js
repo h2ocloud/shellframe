@@ -625,6 +625,7 @@
   const officeHost = {
     get: k => (prefs && Object.prototype.hasOwnProperty.call(prefs, k) ? clone(prefs[k]) : null),
     set: (k, v) => { prefs = prefs || {}; if (v == null) delete prefs[k]; else prefs[k] = clone(v); savePrefs(false); },
+    lang: () => lang(),
     close: () => close(),
     // True while the overlay is the whiteboard alone (SFOffice.openBoard): office.html draws no floor and no office-only helper is asked.
     boardOnly: () => boardMode,
