@@ -8785,9 +8785,24 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const ver = document.getElementById('about-version').textContent || '';
     const platform = navigator.platform || '';
     const title = encodeURIComponent(`[${ver}] `);
-    const body = encodeURIComponent(`**Version:** ${ver}\n**Platform:** ${platform}\n\n**What happened:**\n\n\n**Steps to reproduce:**\n1. \n\n**Expected vs actual:**\n`);
-    window.open(`https://github.com/h2ocloud/shellbot/issues/new?title=${title}&body=${body}`, '_blank');
+    const body = encodeURIComponent(`> This page is public: do not paste passwords, keys, internal addresses or customer names.\n` +
+      `> 這是公開頁面：不要貼密碼、金鑰、內網位址、客戶名。\n\n` +
+      `**Version:** ${ver}\n**Platform:** ${platform}\n\n**What happened:**\n\n\n**Steps to reproduce:**\n1. \n\n**Expected vs actual:**\n`);
+    openExternal(`https://github.com/h2ocloud/shellbot/issues/new?title=${title}&body=${body}`);
   });
+  // A link out of the app opens in the system browser. The app's web view (WKWebView on macOS, WebView2 on Windows)
+  // does nothing with window.open or target=_blank (reported: Report Issue did nothing; the About window's links too),
+  // so every http(s) link in the page goes through open_url, as terminal links already do (see WebLinksAddon above).
+  function openExternal(url) {
+    if (!/^https?:\/\//i.test(String(url || ''))) return;
+    try { pywebview.api.open_url(url).catch(() => window.open(url, '_blank')); } catch (_) { window.open(url, '_blank'); }
+  }
+  document.addEventListener('click', (e) => {
+    const a = e.target && e.target.closest && e.target.closest('a[href]');
+    if (!a || !/^https?:\/\//i.test(a.getAttribute('href') || '')) return;
+    e.preventDefault();
+    openExternal(a.href);
+  }, true);
   // ── About → skill sheet for an AI ──
   let _skillText = '';
   async function loadSkillDoc() {
