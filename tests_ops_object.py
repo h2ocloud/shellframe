@@ -229,7 +229,7 @@ for _ in range(300):                                     # 10 minutes at a 2 s p
     clock.t += 2
 check("sampling every 2 s still keeps one point per 5 minutes (not one per reading)",
       2 <= len(c.history) <= 3 and all(b[0] - a[0] >= 298 for a, b in zip(c.history, c.history[1:])), [p[0] - T0 for p in c.history])
-check("a point: time, CPU, memory %, pressure code, swap, free disk %, speeds, route", len(c.history[0]) == 9 and c.history[0][2] == 62.5
+check("a point: time, CPU, memory %, pressure code, swap, free disk %, speeds, route, CPU and GPU temperature", len(c.history[0]) == 11 and c.history[0][2] == 62.5
       and c.history[0][3] == 0 and c.history[0][8] is True, c.history[0])
 c, clock, pushed, sent = make()
 c.live(True, clock())
@@ -245,7 +245,7 @@ c.live(False)
 c.stop()
 saved = json.loads(O.history_file().read_text())
 check("the file is the points, nothing else (no per-core numbers, no program names)", set(saved) == {"v", "points"}
-      and all(len(p) == 9 for p in saved["points"]) and "Safari" not in O.history_file().read_text(), saved.keys())
+      and all(len(p) == 11 for p in saved["points"]) and "Safari" not in O.history_file().read_text(), saved.keys())
 clock5 = Clock()
 clock5.t = c.clock() + 10
 c5 = O.Collector(sampler=Fake(clock5), clock=clock5)
@@ -364,7 +364,7 @@ c.step()
 s = c.summary("zh")
 check("summary: the contract's keys", {"badge", "hint", "level", "reason", "since", "muted_until", "updated", "face"} <= set(s)
       and s["level"] == "ok" and s["hint"] == "一切正常" and s["badge"] == 0 and s["updated"] == T0, s)
-check("face: the contract's keys", set(s["face"]) == {"cpu", "mem", "pressure", "net_in", "net_out", "online", "disk_free_pct", "spark"}
+check("face: the contract's keys", set(s["face"]) == {"cpu", "mem", "pressure", "net_in", "net_out", "online", "disk_free_pct", "spark", "cpu_temp", "gpu_temp", "gpu_util"}
       and s["face"]["mem"] == 62.5 and s["face"]["pressure"] == "normal" and s["face"]["spark"] == [62.5], s["face"])
 clean = oo.clean_summary(s)
 check("clean_summary keeps level, reason, since, muted_until, updated and the face", clean["level"] == "ok" and clean["face"] == s["face"]
@@ -403,7 +403,7 @@ for _ in range(40):
     clock.t += 2
 v = c.view("en")
 kinds = {w["kind"] for sec in v["sections"] for w in sec["widgets"]}
-check("sections in the contract's order", [x["id"] for x in v["sections"]] == ["cpu", "mem", "net", "top", "day", "rules"])
+check("sections in the contract's order", [x["id"] for x in v["sections"]] == ["cpu", "mem", "net", "temp", "top", "day", "rules"])
 check("only the eight kinds", kinds <= set(oo.WIDGET_KINDS) and kinds == set(oo.WIDGET_KINDS), kinds)
 check("refresh 2000 ms, a title", v["refresh_ms"] == 2000 and v["title"] == "Ops board")
 cpu = v["sections"][0]["widgets"]
@@ -419,23 +419,23 @@ check("memory: stack, 30-minute pressure strip, swap stat", [w["kind"] for w in 
 net = v["sections"][2]["widgets"]
 check("network and disk: spark of two series, the connection, the disk", [w["kind"] for w in net] == ["spark", "stat", "stat"]
       and len(net[0]["series"]) == 2 and net[1]["value"] == "Connected" and net[2]["value"] == "50%" and net[2]["sub"] == "250.0 GB" and net[2]["tone"] == "ok", net)
-top = v["sections"][3]["widgets"][0]
+top = v["sections"][4]["widgets"][0]
 check("top: columns and rows, a program as its name (and how many processes)", top["columns"] == ["Program", "CPU", "Memory"]
       and top["rows"][0] == ["Safari ×3", "12%", "1.0 GB"], top)
-day = v["sections"][4]["widgets"][0]
+day = v["sections"][5]["widgets"][0]
 check("24 hours: 288 cells of 5 minutes", day["kind"] == "strip" and day["step_s"] == 300 and len(day["cells"]) == 288
       and day["cells"][-1] == "ok" and day["start"] % 300 == 0, (day["step_s"], len(day["cells"])))
-rules = v["sections"][5]["widgets"][0]
-check("rules: id, label, on, value, unit, level, min, max, step", rules["kind"] == "rules" and len(rules["items"]) == 6
+rules = v["sections"][6]["widgets"][0]
+check("rules: id, label, on, value, unit, level, min, max, step", rules["kind"] == "rules" and len(rules["items"]) == 8
       and rules["items"][0] == {"id": "mem_pressure_high", "label": "Memory pressure is high for", "on": True, "value": 10, "unit": "min",
-                                "level": "alert", "min": 1, "max": 120, "step": 1} and rules["items"][5]["on"] is False, rules["items"][0])
+                                "level": "alert", "min": 1, "max": 120, "step": 1} and rules["items"][5]["on"] is False and rules["items"][6]["on"] and rules["items"][7]["on"], rules["items"][0])
 check("the banner when all is well", v["banner"] == {"level": "ok", "text": "All normal", "since": None, "rule": ""}, v["banner"])
 check("the whole English screen has no Chinese in it", not CJK.search(json.dumps(v, ensure_ascii=False)), CJK.findall(json.dumps(v, ensure_ascii=False))[:5])
 vz = c.view("zh")
 text = json.dumps(vz, ensure_ascii=False)
 check("the Chinese screen: titles, labels, units and the banner are Chinese", vz["title"] == "維運戰情" and vz["banner"]["text"] == "一切正常"
       and vz["sections"][0]["widgets"][0]["label"] == "全部核心" and vz["sections"][1]["widgets"][0]["label"].startswith("已用")
-      and vz["sections"][5]["widgets"][0]["items"][0]["unit"] == "分鐘")
+      and vz["sections"][6]["widgets"][0]["items"][0]["unit"] == "分鐘")
 check("and no English label of the English screen is left in it", all(w not in text for w in ("All cores", "Each core", "Free disk", "Connected", "Program")))
 check("every widget survives the host's cleaning unchanged", oo.clean_view(v)["sections"] == v["sections"], "")
 c.sampler.values = {"pressure": "critical", "cpu": 97.0}
@@ -466,6 +466,143 @@ for _ in range(4):
     clock.t += 300
 check("readings 5 minutes apart still colour the strip (until 10 minutes after the last)",
       c.view("en")["sections"][1]["widgets"][1]["cells"].count("ok") >= 20, c.view("en")["sections"][1]["widgets"][1]["cells"])
+
+print("temperatures: the record, the face, the detail section, the rules")
+GPU1 = [{"name": "NVIDIA GB10", "temp": 43.0, "util": 0.0, "mem_used": None, "mem_total": None, "power": 11.03}]
+GPU2 = [{"name": "Demo A", "temp": 70.0, "util": 80.0, "mem_used": 4 << 30, "mem_total": 24 << 30, "power": 210.0},
+        {"name": "Demo B", "temp": 88.0, "util": 60.0, "mem_used": 1 << 30, "mem_total": 24 << 30, "power": None}]
+
+
+def temp_view(vals, kind="linux", lang="en"):
+    c, clock, *_ = make()
+    c.sampler.kind = kind
+    for _ in range(4):
+        c.sampler.values = dict(vals)
+        c.live(True, clock())
+        c.step()
+        clock.t += 2
+    sec = [x for x in c.view(lang)["sections"] if x["id"] == "temp"]
+    return c, sec[0] if sec else None
+
+
+c, sec = temp_view({"cpu_temp": 45.8, "cpu_temp_src": "acpitz", "gpus": GPU1, "gpu_temp": 43.0, "gpu_util": 0.0, "temp_supported": True})
+w = sec["widgets"]
+check("the temperature section comes after network and disk, before the top five",
+      [x["id"] for x in c.view("en")["sections"]] == ["cpu", "mem", "net", "temp", "top", "day", "rules"] and sec["title"] == "Temperature")
+check("CPU: a stat with the degrees and the sensor it was read from", w[0]["kind"] == "stat" and w[0]["value"] == "45.8°C" and w[0]["sub"] == "acpitz"
+      and w[0]["tone"] == "ok", w[0])
+check("a GPU: a stat (degrees; shared memory and power in words) and a utilization gauge", w[1]["kind"] == "stat" and w[1]["label"] == "GPU · NVIDIA GB10"
+      and w[1]["value"] == "43°C" and w[1]["sub"] == "Shared memory · Power 11.0 W" and w[2]["kind"] == "gauge" and w[2]["value"] == 0.0, w[1:3])
+check("the last 30 minutes of CPU and GPU temperature (30 cells of a minute)", w[-1]["kind"] == "spark" and w[-1]["unit"] == "°C"
+      and [s_["label"] for s_ in w[-1]["series"]] == ["CPU", "GPU"] and all(len(s_["values"]) == 30 for s_ in w[-1]["series"])
+      and w[-1]["series"][0]["values"][-1] == 45.8, w[-1])
+zh = [x for x in c.view("zh")["sections"] if x["id"] == "temp"][0]
+check("Chinese: the title, the labels and the memory words", zh["title"] == "溫度" and zh["widgets"][0]["label"] == "CPU 溫度"
+      and zh["widgets"][1]["sub"] == "共用記憶體 · 功耗 11.0 W" and zh["widgets"][2]["label"] == "GPU 使用率")
+check("English has no Chinese in it", not CJK.search(json.dumps(sec, ensure_ascii=False)), sec)
+check("the section survives the host's cleaning unchanged", oo.clean_view(c.view("en"))["sections"][3] == sec)
+c, sec = temp_view({"cpu_temp": 91.0, "cpu_temp_src": "coretemp", "gpus": GPU2, "gpu_temp": 88.0, "gpu_util": 70.0, "temp_supported": True})
+w = sec["widgets"]
+check("two GPUs: one stat and one gauge each, numbered; memory as used / total; hot ones are bad",
+      [x["kind"] for x in w] == ["stat", "stat", "gauge", "stat", "gauge", "spark"] and w[0]["tone"] == "bad" and w[1]["label"] == "GPU 0 · Demo A"
+      and w[1]["sub"] == "Memory 4.0 GB / 24.0 GB · Power 210.0 W" and w[1]["tone"] == "ok" and w[3]["tone"] == "bad" and w[3]["sub"] == "Memory 1.0 GB / 24.0 GB", w)
+c, sec = temp_view({"cpu_temp": 52.0, "cpu_temp_src": "k10temp", "temp_supported": True})
+check("only a CPU: its stat and the spark, no GPU card", [x["kind"] for x in sec["widgets"]] == ["stat", "spark"]
+      and [s_["label"] for s_ in sec["widgets"][1]["series"]] == ["CPU"])
+c, sec = temp_view({"temp_supported": False}, kind="mac")
+check("macOS: one line that says why, not an empty section", [x["kind"] for x in sec["widgets"]] == ["stat"] and sec["widgets"][0]["value"] == "—"
+      and "macOS needs administrator rights" in sec["widgets"][0]["sub"], sec)
+check("…in Chinese too", "macOS 需要管理員權限" in [x for x in c.view("zh")["sections"] if x["id"] == "temp"][0]["widgets"][0]["sub"])
+c, sec = temp_view({"temp_supported": False}, kind="win")
+check("Windows with nothing to read: the administrator-rights line", "Windows needs administrator rights" in sec["widgets"][0]["sub"], sec)
+c, sec = temp_view({"temp_supported": False, "gpus": GPU1, "gpu_temp": 43.0, "gpu_util": 0.0}, kind="win")
+check("Windows with an NVIDIA card: the GPU is shown, the CPU says it needs rights", sec["widgets"][0]["value"] == "—" and "administrator" in sec["widgets"][0]["sub"]
+      and sec["widgets"][1]["value"] == "43°C")
+c, sec = temp_view({"temp_supported": True}, kind="linux")
+check("Linux with no sensor: the no-sensor line", "no sensor was found" in sec["widgets"][0]["sub"], sec)
+c, sec = temp_view({"cpu_temp": 46.0, "cpu_temp_src": "acpitz", "gpu_temp": 43.0, "gpu_util": 5.5, "temp_supported": True})
+check("summary face: cpu_temp, gpu_temp and gpu_util", {k: c.summary("en")["face"][k] for k in ("cpu_temp", "gpu_temp", "gpu_util")} == {"cpu_temp": 46.0, "gpu_temp": 43.0, "gpu_util": 5.5})
+cl = oo.clean_summary(c.summary("en"))["face"]
+check("clean_summary keeps the three; out of range is clamped to -40..150, a string or a bool is None",
+      cl["cpu_temp"] == 46.0 and cl["gpu_util"] == 5.5
+      and oo.clean_summary({"level": "ok", "face": {"cpu_temp": 999, "gpu_temp": -90, "gpu_util": "hot"}})["face"]["cpu_temp"] == 150
+      and oo.clean_summary({"level": "ok", "face": {"cpu_temp": 999, "gpu_temp": -90, "gpu_util": "hot"}})["face"]["gpu_temp"] == -40
+      and oo.clean_summary({"level": "ok", "face": {"cpu_temp": True}})["face"]["cpu_temp"] is None
+      and oo.clean_summary({"level": "ok", "face": {}})["face"]["gpu_util"] is None, cl)
+check("a point carries both temperatures (the last two fields)", c.history and c.history[-1][9] == 46.0 and c.history[-1][10] == 43.0, c.history[-1:] )
+
+
+print("temperatures: a reading that goes away does not stay on the face; a 5-minute reading still draws the 30-minute line")
+c, clock, *_ = make()
+c.sampler.kind = "linux"
+c.sampler.values = {"cpu_temp": 50.0, "cpu_temp_src": "coretemp", "temp_supported": True, "gpus": GPU1, "gpu_temp": 43.0, "gpu_util": 1.0}
+c.step()
+check("read: on the face", c.summary("en")["face"]["cpu_temp"] == 50.0 and c.summary("en")["face"]["gpu_temp"] == 43.0)
+clock.t += 300
+c.sampler.values = {"cpu_temp": None, "temp_supported": True, "gpus": None}
+c.step()
+f = c.summary("en")["face"]
+check("the CPU sensor vanishes: its temperature goes; a sample that did not ask the GPU (gpus None) leaves the last GPU reading", f["cpu_temp"] is None and f["gpu_temp"] == 43.0, f)
+clock.t += 300
+c.sampler.values = {"gpus": []}
+c.step()
+f = c.summary("en")["face"]
+check("nvidia-smi asked and nothing came (gpus []): the GPU reading goes from the face and the screen", f["gpu_temp"] is None and f["gpu_util"] is None
+      and not [w_ for w_ in [x for x in c.view("en")["sections"] if x["id"] == "temp"][0]["widgets"] if w_["label"].startswith("GPU")], f)
+c, clock, *_ = make()
+c.sampler.kind = "linux"
+for _ in range(6):                                          # normal mode: one full reading every 5 minutes
+    c.sampler.values = {"cpu_temp": 61.0, "cpu_temp_src": "acpitz", "temp_supported": True}
+    c.step()
+    clock.t += 300
+sp = [w_ for w_ in [x for x in c.view("en")["sections"] if x["id"] == "temp"][0]["widgets"] if w_["kind"] == "spark"][0]["series"][0]["values"]
+check("five-minute readings: the line is drawn across the 30 minutes (each reading held for up to 10 minutes), not a dot in every fifth cell",
+      sum(v is not None for v in sp) >= 25 and sp[-1] == 61.0, sp)
+check("a reading older than 10 minutes is not carried on", O.Collector._hold([50.0] + [None] * 15, 60) == [50.0] * 11 + [None] * 5)
+
+print("history: an old record without temperatures still reads")
+c, clock, *_ = make()
+O.history_file().write_text(json.dumps({"v": 1, "points": [
+    [int(T0 - 600), 10.0, 50.0, 0, 1 << 30, 50.0, 1.0, 2.0, True],
+    [int(T0 - 300), 11.0, 51.0, 0, 1 << 30, 50.0, 1.0, 2.0, True, 47.5, 999],
+    [int(T0 - 100), 11.0, 51.0, 0, 1 << 30, 50.0, 1.0, 2.0, True, "x", 60.0],
+    [int(T0 - 90), 1, 2]]}))
+c2 = O.Collector(sampler=Fake(clock), clock=clock)
+check("a 9-field point gets two None; a bad temperature becomes None; a short row is dropped",
+      [p[9:] for p in c2.history] == [[None, None], [47.5, None], [None, 60.0]] and all(len(p) == 11 for p in c2.history), c2.history)
+c2.step()
+check("the 24-hour strip still draws from them", [x for x in c2.view("en")["sections"] if x["id"] == "day"][0]["widgets"][0]["cells"].count("ok") == 2)
+
+print("the temperature rules, through the collector")
+c, clock, pushed, sent = make()
+c.sampler.kind = "linux"
+for _ in range(8):                                        # 8 minutes at 90 C
+    c.sampler.values = {"cpu_temp": 90.0, "gpu_temp": 70.0}
+    c.step()
+    clock.t += 60
+check("CPU at 90 C for 5 minutes: an alert, notified once, with the degrees in the words",
+      c.state(clock())["level"] == "alert" and c.state(clock())["rule"] == "cpu_temp_high" and len(sent) == 1 and "CPU at 90°C or more" in sent[0][1]
+      and "(90°C now)" in sent[0][1], (c.state(clock()), sent))
+for _ in range(4):
+    c.sampler.values = {"cpu_temp": 60.0}
+    c.step()
+    clock.t += 30
+check("…and it ends after three readings under the line", c.state(clock())["level"] == "ok", c.state(clock()))
+c, clock, pushed, sent = make()
+check("a computer with no temperature never fires them", all(c.step() is None or True for _ in range(1)) and c.engine.status(clock())["level"] == "ok")
+c.act("set_rule", {"id": "cpu_temp_high", "on": False}, "en")
+for _ in range(8):
+    c.sampler.values = {"cpu_temp": 99.0}
+    c.step()
+    clock.t += 60
+check("switched off: no event even at 99 C", c.state(clock())["level"] == "ok" and not sent)
+c, clock, *_ = make()
+c.sampler.values = {"gpu_temp": 90.0}
+c.step()
+check("the collector tells the sampler to read the GPU on the 30 s rounds while the GPU rule is building up", getattr(c.sampler, "watch_gpu", None) is False)
+clock.t += 30
+c.step()
+check("…once a GPU reading is over the line", c.sampler.watch_gpu is True and c.interval(clock()) == O.WATCH_S)
 
 print("an unsupported system")
 class NoSampler(Fake):

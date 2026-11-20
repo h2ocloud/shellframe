@@ -40,8 +40,8 @@ def smp(**kw):
 
 print("the defaults are the design's table")
 d = {i: R.spec(i) for i in R.IDS}
-check("six rules, in the design's order", list(R.IDS) == ["mem_pressure_high", "mem_pressure_warn", "cpu_high",
-                                                          "swap_growth", "disk_low", "net_down"])
+check("eight rules, in the design's order", list(R.IDS) == ["mem_pressure_high", "mem_pressure_warn", "cpu_high",
+                                                            "swap_growth", "disk_low", "net_down", "cpu_temp_high", "gpu_temp_high"])
 check("memory pressure high: 10 min, alert", (d["mem_pressure_high"]["value"], d["mem_pressure_high"]["level"]) == (10, "alert"))
 check("memory pressure warning: 30 min, warn", (d["mem_pressure_warn"]["value"], d["mem_pressure_warn"]["level"]) == (30, "warn"))
 check("CPU: 5 min, alert", (d["cpu_high"]["value"], d["cpu_high"]["level"]) == (5, "alert"))
@@ -187,6 +187,49 @@ e16.reset_rules()
 check("reset keeps a running event of a rule that is on by default", e16.status(T0)["level"] == "alert")
 e15.reset_rules()
 check("reset puts the defaults back", e15.cfg["mem_pressure_high"]["value"] == 10 and e15.cfg["net_down"]["on"] is False)
+
+print("temperature rules: CPU >= 90 C and GPU >= 85 C for N minutes")
+d = {i: R.spec(i) for i in R.IDS}
+check("defaults: both alerts, on, 5 minutes, minutes 1..120", all((d[i]["on"], d[i]["value"], d[i]["level"], d[i]["min"], d[i]["max"]) == (True, 5, "alert", 1, 120)
+                                                              for i in ("cpu_temp_high", "gpu_temp_high")))
+check("the lines are 90 and 85 degrees, and the labels say so in both languages", (R.CPU_TEMP_LINE, R.GPU_TEMP_LINE) == (90.0, 85.0)
+      and "90°C" in d["cpu_temp_high"]["label"]["en"] and "90°C" in d["cpu_temp_high"]["label"]["zh"] and "85°C" in d["gpu_temp_high"]["label"]["zh"])
+et = R.Engine()
+ev = []
+for n in range(5):
+    ev += et.feed(smp(cpu_temp=91.0), T0 + n * MIN)
+check("CPU 91 C for four minutes: not yet", ev == [] and et.status(T0 + 4 * MIN)["level"] == "ok")
+ev = et.feed(smp(cpu_temp=91.0), T0 + 5 * MIN)
+check("at five minutes: one alert, notified, since the first sample over the line", [(e.rule, e.level, e.notify, e.since) for e in ev] == [("cpu_temp_high", "alert", True, T0)])
+check("the words: degrees and minutes, in both languages", et.reason("cpu_temp_high", T0 + 5 * MIN, "en") == "CPU at 90°C or more for 5 min (91°C now)"
+      and et.reason("cpu_temp_high", T0 + 5 * MIN, "zh") == "CPU 溫度 90°C 以上 5 分鐘（現在 91°C）")
+check("it is counted once", et.feed(smp(cpu_temp=95.0), T0 + 6 * MIN) == [])
+for n in range(2):
+    et.feed(smp(cpu_temp=70.0), T0 + (7 + n) * MIN)
+check("two readings under the line do not end it", et.status(T0 + 8 * MIN)["level"] == "alert")
+et.feed(smp(cpu_temp=70.0), T0 + 9 * MIN)
+check("the third does", et.status(T0 + 9 * MIN)["level"] == "ok")
+eb = R.Engine()
+eb.feed(smp(gpu_temp=84.9), T0)
+check("GPU 84.9 C is under the line, 85.0 is over", not eb.building("gpu_temp_high") and (eb.feed(smp(gpu_temp=85.0), T0 + MIN) == [] and eb.building("gpu_temp_high")))
+eg = R.Engine()
+check("a reading that is not there (None, or no key at all) never fires and never builds", all(
+    eg.feed(smp(cpu_temp=None, gpu_temp=None), T0 + n * MIN) == [] for n in range(20)) and all(eg.feed(smp(), T0 + (20 + n) * MIN) == [] for n in range(20))
+      and not eg.building("cpu_temp_high") and not eg.pending())
+ed = R.Engine()
+ed.set_rule("gpu_temp_high", on=False)
+ed.feed(smp(gpu_temp=99.0), T0)
+check("a rule switched off does not build up", not ed.building("gpu_temp_high") and ed.feed(smp(gpu_temp=99.0), T0 + 6 * MIN) == [])
+es = R.Engine()
+es.set_rule("cpu_temp_high", value=2)
+es.feed(smp(cpu_temp=92.0), T0)
+check("the minutes can be changed", [x.rule for x in es.feed(smp(cpu_temp=92.0), T0 + 2 * MIN)] == ["cpu_temp_high"])
+es2 = R.Engine()
+es2.feed(smp(cpu_temp=92.0), T0)
+es2.feed(smp(cpu_temp=92.0), T0 + 2000)
+check("a gap longer than max_gap restarts what was building up (the computer slept)", es2.status(T0 + 2000)["level"] == "ok" and es2.building("cpu_temp_high"))
+check("both temperature rules are saved and read back", R.Engine({"rules": {"gpu_temp_high": {"on": False, "value": 9}}}).cfg["gpu_temp_high"] == {"on": False, "value": 9}
+      and R.Engine().cfg["cpu_temp_high"] == {"on": True, "value": 5})
 
 print("what is saved")
 saved = R.Engine()

@@ -7,6 +7,8 @@ stand-in Python side (ops_peer / ops_peer_view / ops_peer_live answer like api_o
   - the faces: ok (green, the three readings and the disk line) and alert (red banner with the reason) are told apart by pixels;
     off / older / out of reach / no data are grey (no red, yellow or green) and say why in words: 「那台沒打開維運戰情」
     「那台版本較舊」「連不上」「還沒有資料」; a computer that has not answered yet says 「讀取中…」
+  - temperatures: a face that carries cpu_temp / gpu_temp has the line 「CPU 46° · GPU 43°」 at the foot (a missing reading is left out, neither
+    leaves no line, a number at or over 90 / 85 °C is in the warning colour), in 3D and in the flat view, in both languages
   - a blip keeps the last good face (150 s), a lasting failure turns it grey
   - the place: hung above the desks' monitors (its frame's bottom above where a monitor's top lands on the wall, its top inside the
     wall), right of the whiteboard and its red count badge, left of the rack; it overlaps none of the whiteboard (with the badge), the
@@ -18,7 +20,7 @@ stand-in Python side (ops_peer / ops_peer_view / ops_peer_live answer like api_o
     靜音 button, no 調整規則 button); a click on one sends nothing; the top five's order switch works and is sent to that computer
   - Arrange positions: the small TV moves with its room
   - English: the window, the tooltip and every string on the small TVs have no Chinese in them
-Headless Chromium and WebKit when playwright has it. Screenshots (Chromium, zh-TW): qa-shots/office-peer-ops-{ok,alert,old}.png (the small TV close up) and office-peer-ops-window.png.
+Headless Chromium and WebKit when playwright has it. Screenshots (Chromium, zh-TW): qa-shots/office-peer-ops-{ok,alert,old}.png (the small TV close up), office-peer-ops-temp.png and office-peer-ops-window.png.
 Run: .venv/bin/python tests_office_peer_ops_ui.py
 """
 import json
@@ -121,6 +123,16 @@ CAPTURE = """async (pid) => { const out = [], f = CanvasRenderingContext2D.proto
     CanvasRenderingContext2D.prototype.fillText = function (s) { out.push(String(s)); return f.apply(this, arguments); };
     try { return draw.call(this, x, g, o); } finally { CanvasRenderingContext2D.prototype.fillText = f; } };
   await new Promise(r => setTimeout(r, 450)); ops.drawPeer = draw; return out; }"""
+
+CAPTURE_STYLE = CAPTURE.replace("out.push(String(s))", "out.push([String(s), String(this.fillStyle)])")
+HOT = "#ff6b86"
+TEMP_WORDS = ["CPU ", "46°", " · ", "GPU ", "43°"]
+
+
+def temp_answer(cpu_t, gpu_t, level="ok", reason=""):
+    a = summ(level, reason)
+    a["face"] = dict(a["face"], cpu_temp=cpu_t, gpu_temp=gpu_t, gpu_util=12.0 if gpu_t is not None else None)
+    return a
 
 
 def hull(pts):
@@ -265,6 +277,57 @@ def run(browser, base, engine):
             xs, ys = [v["x"] for v in q], [v["y"] for v in q]
             x0, y0 = max(0, min(xs) - 70), max(60, min(ys) - 50)
             sp.screenshot(path=str(SHOTS / f"office-peer-ops-{name}.png"), clip={"x": x0, "y": y0, "width": min(1280 - x0, max(xs) - min(xs) + 140), "height": min(800 - y0, max(ys) - min(ys) + 100)})
+        sp.context.close()
+
+    # ── 2c. temperatures on the small TV ──
+    print(f"[{engine}] temperatures on the small TV")
+    tpage = new_page(browser, errors, answers={"pid-a": temp_answer(46.4, 43.0), "pid-b": temp_answer(93.0, 70.0, "alert", "CPU 溫度 90°C 以上 6 分鐘（現在 93°C）"),
+                                              "pid-c": temp_answer(None, 86.0), "pid-d": temp_answer(52.0, None), "pid-e": temp_answer(None, None)})
+    tfr = open_office(tpage)
+    tpage.wait_for_timeout(300)
+    for pid in ("pid-a", "pid-b", "pid-c", "pid-d", "pid-e"):
+        goto_room(tpage, tfr, pid)
+    tw = {}
+    for pid in ("pid-a", "pid-b", "pid-c", "pid-d", "pid-e"):
+        goto_room(tpage, tfr, pid)
+        tw[pid] = tfr.evaluate(CAPTURE_STYLE, pid)
+    mark = lambda pid: [a for a, _ in tw[pid]]
+    check("ok: the foot line has the disk on the left and the temperatures, CPU 46° · GPU 43°",
+          list(dict.fromkeys(a for a in mark("pid-a") if a in TEMP_WORDS)) == TEMP_WORDS and "磁碟剩 42%" in mark("pid-a"), mark("pid-a"))
+    check("…the numbers are bright, not the warning colour", all(c.lower() != HOT for a, c in tw["pid-a"] if a in ("46°", "43°")), tw["pid-a"])
+    check("alert, CPU 93°: the hot number is red, the cool GPU 70° is not", {a: c.lower() == HOT for a, c in tw["pid-b"] if a in ("93°", "70°")} == {"93°": True, "70°": False}, tw["pid-b"])
+    check("only a GPU reading (86°, over 85): just the GPU, in red", "GPU " in mark("pid-c") and "86°" in mark("pid-c") and "CPU " not in mark("pid-c")
+          and {c.lower() for a, c in tw["pid-c"] if a == "86°"} == {HOT}, tw["pid-c"])
+    check("only a CPU reading: just the CPU, no dot", "CPU " in mark("pid-d") and "52°" in mark("pid-d") and "GPU " not in mark("pid-d") and " · " not in mark("pid-d"), mark("pid-d"))
+    check("neither reading: no line at all", not any("°" in a or a in ("CPU ", "GPU ") for a in mark("pid-e")), mark("pid-e"))
+    goto_room(tpage, tfr, "pid-a")
+    tfr.evaluate("__office.setMode('flat', true)")
+    fl = {}
+    for pid in ("pid-a", "pid-e"):
+        goto_room(tpage, tfr, pid)
+        fl[pid] = [a for a, _ in tfr.evaluate(CAPTURE_STYLE, pid)]
+    check("flat view: the readings narrow and a fourth column has CPU 46° over GPU 43° (and nothing when neither is read)",
+          list(dict.fromkeys(a for a in fl["pid-a"] if a in ("CPU ", "46°", "GPU ", "43°"))) == ["CPU ", "46°", "GPU ", "43°"] and not any("°" in a for a in fl["pid-e"])
+          and {"CPU 24%", "記憶體 61%"} <= set(fl["pid-a"]), fl)
+    tfr.evaluate("__office.setMode('iso', true)")
+    check("no tpage errors", not errors, errors)
+    tpage.context.close()
+    tpage = new_page(browser, errors, lang="en", answers={"pid-a": temp_answer(46.4, 43.0)})
+    tfr = open_office(tpage)
+    goto_room(tpage, tfr, "pid-a")
+    en = [s_ for s_ in tfr.evaluate(CAPTURE, "pid-a") if s_.strip()]
+    check("English: the temperatures are drawn and nothing on the face is Chinese", "46°" in en and "43°" in en and not any(CJK.search(s_) for s_ in en), en)
+    tpage.context.close()
+    if shoot:
+        sp = new_page(browser, errors, dpr=2, answers={"pid-a": temp_answer(46.4, 43.0)})
+        sfr = open_office(sp, "pid-a")
+        goto_room(sp, sfr, "pid-a")
+        sp.mouse.move(5, 120)
+        sp.wait_for_timeout(500)
+        q = sfr.evaluate("(p) => __office.peerTvScreen(p)", "pid-a")
+        xs, ys = [v["x"] for v in q], [v["y"] for v in q]
+        x0, y0 = max(0, min(xs) - 70), max(60, min(ys) - 50)
+        sp.screenshot(path=str(SHOTS / "office-peer-ops-temp.png"), clip={"x": x0, "y": y0, "width": min(1280 - x0, max(xs) - min(xs) + 140), "height": min(800 - y0, max(ys) - min(ys) + 100)})
         sp.context.close()
 
     # a pending computer, then a blip that keeps the face, then a lasting failure

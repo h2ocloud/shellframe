@@ -85,7 +85,9 @@ class Fake:
     def sample(self, full=True, prime=True):
         out = dict.fromkeys(ops_sampler.SAMPLE_KEYS)
         out.update(t=self.clock(), cpu=12.0, cores=[10.0] * 4, cores_p=4, cores_e=0, pressure="normal", swap_used=1 << 30,
-                   swap_total=4 << 30, disk_free_pct=50.0, disk_free=250 << 30, disk_total=500 << 30, online=True)
+                   swap_total=4 << 30, disk_free_pct=50.0, disk_free=250 << 30, disk_total=500 << 30, online=True,
+                   cpu_temp=46.4, cpu_temp_src="acpitz", temp_supported=True, gpu_temp=43.0, gpu_util=5.0,
+                   gpus=[{"name": "示範顯示卡", "temp": 43.0, "util": 5.0, "mem_used": None, "mem_total": None, "power": 11.0}])
         if full:
             out.update(mem_total=16 << 30, mem_used=10 << 30, mem_pct=62.5, mem_app=6 << 30, mem_wired=2 << 30,
                        mem_compressed=1 << 30, mem_cached=3 << 30, net_in=120000.0, net_out=30000.0, iface="en0")
@@ -199,9 +201,16 @@ try:
           and set(got) == {"success", "level", "reason", "since", "muted_until", "updated", "face"}, sorted(got))
     check("…the level and the face", got["level"] == "ok" and got["face"]["cpu"] == 12.0 and got["face"]["mem"] == 62.5
           and got["updated"] == clock.t, got)
+    check("…the temperatures ride in the face (cpu_temp, gpu_temp, gpu_util), cleaned like the rest",
+          (got["face"]["cpu_temp"], got["face"]["gpu_temp"], got["face"]["gpu_util"]) == (46.4, 43.0, 5.0)
+          and link_ops.FACE_KEYS == ("level", "reason", "since", "muted_until", "updated", "face"), got["face"])
     check("…the language arrived (a=asked with lang en)", a.asked[-1] == ("ops", {"rev": "", "lang": "en", "sort": "", "peer_id": b.fid}), a.asked[-1])
     v = link_ops.peer_view(b.link, a.fid, "zh")
     check("/link/ops/view: success, in Chinese", v["success"] is True and v["title"] == "維運戰情" and len(v["sections"]) >= 5, v.get("code"))
+    tsec = [x for x in v["sections"] if x["id"] == "temp"]
+    check("…the temperature section came through (CPU stat, the GPU card, the spark), with the Chinese words",
+          len(tsec) == 1 and tsec[0]["title"] == "溫度" and [w_["kind"] for w_ in tsec[0]["widgets"]][:3] == ["stat", "stat", "gauge"]
+          and tsec[0]["widgets"][0]["value"] == "46.4°C" and tsec[0]["widgets"][1]["sub"].startswith("共用記憶體"), tsec)
     check("…and the serving side's own language is not changed by the asker", coll.lang == "en")
     rules = widgets(v, "rules")
     check("…the rules widget is readonly: true", len(rules) == 1 and rules[0].get("readonly") is True and rules[0]["items"], rules)

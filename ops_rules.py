@@ -11,6 +11,15 @@ min..max, which is also all a saved value can say):
   swap_growth         swap used grew by more than N GB within 30 minutes  warn    2 GB
   disk_low            free disk under N percent                           alert   10 %
   net_down            no route out for N minutes (off by default: a laptop is often offline)  warn  2 min
+  cpu_temp_high       CPU temperature at or over 90 C for N minutes           alert   5 min
+  gpu_temp_high       GPU temperature at or over 85 C for N minutes           alert   5 min
+
+Why those two lines: most desktop and laptop CPUs start to throttle at 95-105 C (an Intel part's TjMax is about
+100 C, an AMD part's Tctl tops out around 95 C), so 90 C held for minutes is already in the zone where the chip is
+about to slow itself down, with 5-10 C of room left to act. NVIDIA consumer GPUs start to throttle at about 83-87 C
+(the "GPU Slowdown Temp" of `nvidia-smi -q`), so 85 C for five minutes means the cooling is not keeping up. The
+number the person can change is the minutes, as for `cpu_high`; the degrees are the constants below. A computer that
+cannot read a temperature (macOS, a Windows CPU, a Linux box with no sensor) has None there, and None never counts.
 
 One event per thing: an event starts when a rule's condition has held for its duration, and its `since` is
 the time of the FIRST sample over the line (not the moment the duration was reached). A sample that is
@@ -26,6 +35,8 @@ RECOVER_SAMPLES = 3
 SWAP_WINDOW_S = 1800
 SWAP_KEEP_EVERY_S = 10.0
 CPU_LINE = 90.0
+CPU_TEMP_LINE = 90.0
+GPU_TEMP_LINE = 85.0
 GB = 1024 ** 3
 
 # id, level, on by default, default, min, max, step, unit (en, zh), label (en, zh)
@@ -42,6 +53,10 @@ SPECS = (
      ("Free disk is under", "磁碟剩餘低於")),
     ("net_down", "warn", False, 2, 1, 120, 1, ("min", "分鐘"),
      ("There is no route out for", "網路中斷（沒有對外路由）連續")),
+    ("cpu_temp_high", "alert", True, 5, 1, 120, 1, ("min", "分鐘"),
+     ("CPU temperature is 90°C or higher for", "CPU 溫度 ≥ 90°C 連續")),
+    ("gpu_temp_high", "alert", True, 5, 1, 120, 1, ("min", "分鐘"),
+     ("GPU temperature is 85°C or higher for", "GPU 溫度 ≥ 85°C 連續")),
 )
 IDS = tuple(s[0] for s in SPECS)
 _SPEC = {s[0]: s for s in SPECS}
@@ -160,6 +175,12 @@ class Engine:
         if rid == "net_down":
             o = sample.get("online")
             return None if o is None else o is False
+        if rid == "cpu_temp_high":
+            c = sample.get("cpu_temp")
+            return None if c is None else c >= CPU_TEMP_LINE
+        if rid == "gpu_temp_high":
+            c = sample.get("gpu_temp")
+            return None if c is None else c >= GPU_TEMP_LINE
         return None
 
     def _track_swap(self, sample, now):
@@ -184,7 +205,8 @@ class Engine:
                     self._st[rid] = self._blank()
             self._swap.clear()
         self._last_t = now
-        self.last = {k: sample.get(k) for k in ("cpu", "pressure", "swap_used", "disk_free_pct", "online")}
+        self.last = {k: sample.get(k) for k in ("cpu", "pressure", "swap_used", "disk_free_pct", "online",
+                                                                  "cpu_temp", "gpu_temp")}
         self._track_swap(sample, now)
         started = []
         for rid in IDS:
@@ -219,6 +241,11 @@ class Engine:
         """Bytes the swap used has grown within the last 30 minutes (over its lowest point in that time)."""
         return self._swap_rise
 
+    def building(self, rule_id) -> bool:
+        """This rule's reading is over its line (building up or running): the collector reads the GPU on the 30 s look then."""
+        st = self._st.get(rule_id)
+        return bool(st and self.cfg[rule_id]["on"] and (st["over"] is not None or st["active"]))
+
     def pending(self) -> bool:
         """Some rule is over its line (building up or running): the collector looks every 30 s then."""
         return any(st["over"] is not None or st["active"] for st in self._st.values())
@@ -248,6 +275,13 @@ class Engine:
             return _t(lang, f"Only {pct}% of the disk is free", f"磁碟只剩 {pct}%")
         if rule_id == "net_down":
             return _t(lang, f"No network route for {mins} min", f"網路中斷 {mins} 分鐘")
+        if rule_id in ("cpu_temp_high", "gpu_temp_high"):
+            which, line = ("CPU", CPU_TEMP_LINE) if rule_id == "cpu_temp_high" else ("GPU", GPU_TEMP_LINE)
+            now_t = last.get("cpu_temp" if which == "CPU" else "gpu_temp")
+            en_now = f" ({now_t:.0f}°C now)" if isinstance(now_t, (int, float)) else ""
+            zh_now = f"（現在 {now_t:.0f}°C）" if isinstance(now_t, (int, float)) else ""
+            return _t(lang, f"{which} at {line:.0f}°C or more for {mins} min{en_now}",
+                      f"{which} 溫度 {line:.0f}°C 以上 {mins} 分鐘{zh_now}")
         return ""
 
     def status(self, now, lang="en") -> dict:

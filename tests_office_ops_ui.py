@@ -14,10 +14,14 @@ summary fields, office_object_view, office_object_live, office_object_action, op
   - the rules: a switch and a number send `set_rule` with the right args (the number clamped to min..max), 靜音 1 小時 sends
     `mute` {minutes: 60}, the defaults button `reset_rules`; each ends with the office reading the objects again
   - at 1280 three sections to a row, at 900 two columns, nothing spills sideways
+  - temperatures: the TV's face has one more line 「CPU 46° · GPU 43°」 (a reading that is missing is left out, neither leaves no line, a number
+    at or over its line, 90 °C for the CPU and 85 °C for the GPU, is in the warning colour), in the 3D and the flat view; the window has a
+    「溫度」 section after network and disk in three shapes (CPU and GPU, CPU only, nothing readable: one line that says why), in both languages
   - English: the window, the button, the tooltip and every string drawn on the TV have no Chinese in them
   - the sidebar's 辦公室 button gets a red dot for `alert` only (not muted, ok, warn, none), from window.__sfOpsLevel and from
     ops_state() at load, and the entry row's width does not move; Settings -> Office has the switch and it writes experimental_ops
-Headless Chromium and WebKit when playwright has it. Screenshots (Chromium, zh-TW): qa-shots/office-ops-*.png (the TV up close: office-ops-tv-{ok,alert}-{iso,flat}-zoom.png).
+Headless Chromium and WebKit when playwright has it. Screenshots (Chromium, zh-TW): qa-shots/office-ops-*.png (the TV up close: office-ops-tv-{ok,alert}-{iso,flat}-zoom.png,
+office-ops-temp-tv.png; the temperature section: office-ops-temp-detail.png).
 Run: .venv/bin/python tests_office_ops_ui.py
 """
 import json
@@ -192,6 +196,45 @@ CAPTURE = """async () => { const out = [], f = CanvasRenderingContext2D.prototyp
   await new Promise(r => setTimeout(r, 450)); ops.draw = draw; return out; }"""
 
 
+# temperatures: the strings the TV draws with the colour each was drawn in
+CAPTURE_STYLE = """async () => { const out = [], f = CanvasRenderingContext2D.prototype.fillText, ops = __office.ops(), draw = ops.draw;
+  ops.draw = function (x, g) { CanvasRenderingContext2D.prototype.fillText = function (s) { out.push([String(s), String(this.fillStyle)]); return f.apply(this, arguments); };
+    try { return draw.call(this, x, g); } finally { CanvasRenderingContext2D.prototype.fillText = f; } };
+  await new Promise(r => setTimeout(r, 450)); ops.draw = draw; return out; }"""
+HOT = "#ff6b86"
+
+
+def decl_t(level="ok", cpu_t=46.0, gpu_t=43.0, lang="zh", reason="", **over):
+    d = decl(level, reason, lang, **over)
+    if d["face"] is not None:
+        d["face"] = dict(d["face"], cpu_temp=cpu_t, gpu_temp=gpu_t, gpu_util=12.0 if gpu_t is not None else None)
+    return d
+
+
+def temp_section(lang="zh", variant="both"):
+    T = (lambda en, zh: zh) if lang == "zh" else (lambda en, zh: en)
+    series = [{"label": "CPU", "values": [44, 45, None, 46, 47, 46, 46, 47, 48, 46], "tone": "info"}]
+    if variant == "none":
+        ws = [{"kind": "stat", "label": T("Temperature", "溫度"), "value": "—", "tone": "dim",
+               "sub": T("This computer cannot read temperatures (macOS needs administrator rights)", "這台電腦讀不到溫度（macOS 需要管理員權限）")}]
+    else:
+        ws = [{"kind": "stat", "label": T("CPU temperature", "CPU 溫度"), "value": "46.0°C", "sub": "acpitz", "tone": "ok"}]
+        if variant == "both":
+            ws += [{"kind": "stat", "label": "GPU · NVIDIA GB10", "value": "43°C", "tone": "ok",
+                    "sub": T("Shared memory · Power 11.0 W", "共用記憶體 · 功耗 11.0 W")},
+                   {"kind": "gauge", "label": T("GPU utilization", "GPU 使用率"), "value": 12.0, "text": "12%", "tone": "info"}]
+            series.append({"label": "GPU", "values": [41, 42, 43, 43, 44, 43, 43, 42, 43, 43], "tone": "warn"})
+        ws.append({"kind": "spark", "label": T("Last 30 minutes", "最近 30 分鐘"), "unit": "°C", "max": None, "series": series})
+    return {"id": "temp", "title": T("Temperature", "溫度"), "widgets": ws}
+
+
+def with_temp(variant, lang="zh"):
+    def extra(v):
+        i = [x["id"] for x in v["sections"]].index("net") + 1
+        v["sections"].insert(i, temp_section(lang, variant))
+    return extra
+
+
 def tv_click_point(fr):
     return fr.evaluate("(k) => __office.wallPoint(k)", "tv")
 
@@ -302,6 +345,67 @@ def run(browser, base, engine):
                 page.wait_for_timeout(200)
                 page.screenshot(path=str(SHOTS / f"office-ops-tv-{lv}-{mode}-zoom.png"),
                                 clip={"x": max(0, min(xs) - 70), "y": max(0, min(ys) - 70), "width": max(xs) - min(xs) + 140, "height": max(ys) - min(ys) + 140})
+        page.context.close()
+
+    # ───────────────────────── 2c. temperatures on the TV ─────────────────────────
+    print(f"[{engine}] temperatures on the TV's face")
+    page = office_page(browser, base, level="ok")
+    fr = open_lobby(page)
+    set_objects(page, [BOOKSHELF, PERSONNEL, decl_t("ok", 46.4, 43.0)], "ok")
+    st = fr.evaluate(CAPTURE_STYLE)
+    texts = [a for a, _ in st]
+    check("the face has the line: CPU 46° · GPU 43°", ["CPU ", "46°", " · ", "GPU ", "43°"] == list(dict.fromkeys(t_ for t_ in texts if t_ in ("CPU ", "46°", " · ", "GPU ", "43°"))), texts)
+    check("…the numbers are bright, not the warning colour", all(c.lower() != HOT for a, c in st if a in ("46°", "43°")), st)
+    set_objects(page, [BOOKSHELF, PERSONNEL, decl_t("ok", 93.0, 86.0)], "ok")
+    st = fr.evaluate(CAPTURE_STYLE)
+    check("CPU 93° (over 90) and GPU 86° (over 85) are in the warning colour", {a: c.lower() for a, c in st if a in ("93°", "86°")} == {"93°": HOT, "86°": HOT}, st)
+    set_objects(page, [BOOKSHELF, PERSONNEL, decl_t("ok", 90.0, 84.0)], "ok")
+    st = fr.evaluate(CAPTURE_STYLE)
+    check("exactly on the line counts (CPU 90°); under it (GPU 84°) does not", {a: c.lower() == HOT for a, c in st if a in ("90°", "84°")} == {"90°": True, "84°": False}, st)
+    set_objects(page, [BOOKSHELF, PERSONNEL, decl_t("ok", 46.0, None)], "ok")
+    texts = [a for a, _ in fr.evaluate(CAPTURE_STYLE)]
+    check("only a CPU reading: no GPU, no dot between", "CPU " in texts and "46°" in texts and "GPU " not in texts and " · " not in texts, texts)
+    set_objects(page, [BOOKSHELF, PERSONNEL, decl_t("ok", None, 43.0)], "ok")
+    texts = [a for a, _ in fr.evaluate(CAPTURE_STYLE)]
+    check("only a GPU reading: just the GPU", "GPU " in texts and "43°" in texts and "CPU " not in texts, texts)
+    set_objects(page, [BOOKSHELF, PERSONNEL, decl_t("ok", None, None)], "ok")
+    texts = [a for a, _ in fr.evaluate(CAPTURE_STYLE)]
+    check("neither (macOS, or an older version): the line is not drawn at all", not any("°" in t_ or t_ in ("CPU ", "GPU ") for t_ in texts), texts)
+    set_objects(page, [BOOKSHELF, PERSONNEL, decl("ok")], "ok")
+    texts = [a for a, _ in fr.evaluate(CAPTURE_STYLE)]
+    check("a face with no temperature keys at all (an older computer's) draws no line either", not any("°" in t_ for t_ in texts), texts)
+    set_objects(page, [BOOKSHELF, PERSONNEL, decl_t("alert", 93.0, 70.0, reason="CPU 溫度 90°C 以上 6 分鐘（現在 93°C）")], "alert")
+    st = fr.evaluate(CAPTURE_STYLE)
+    check("under a red banner the line is still there, the hot one red", {a: c.lower() == HOT for a, c in st if a in ("93°", "70°")} == {"93°": True, "70°": False}, st)
+    set_objects(page, [BOOKSHELF, PERSONNEL, decl_t("muted", 46.0, 43.0)], "muted")
+    check("muted: the line is there too", "46°" in [a for a, _ in fr.evaluate(CAPTURE_STYLE)])
+    fr.evaluate("__office.setMode('flat', true); __office.setArea('lobby', true)")
+    page.wait_for_timeout(500)
+    set_objects(page, [BOOKSHELF, PERSONNEL, decl_t("ok", 46.0, 43.0)], "ok")
+    st = fr.evaluate(CAPTURE_STYLE)
+    check("the flat view (a low, wide screen): the line is in the header", ["CPU ", "46°", " · ", "GPU ", "43°"] == list(dict.fromkeys(a for a, _ in st if a in ("CPU ", "46°", " · ", "GPU ", "43°"))), st)
+    fr.evaluate("__office.setMode('iso', true)")
+    check("no page errors", not page.errors, page.errors)
+    page.context.close()
+    if shoot:
+        page = office_page(browser, base, level="ok")
+        fr = open_lobby(page)
+        fr.evaluate("__office.setMode('iso', true); __office.setArea('lobby', true)")
+        page.wait_for_timeout(600)
+        set_objects(page, [BOOKSHELF, PERSONNEL, decl_t("ok", 46.0, 43.0)], "ok")
+        pts = fr.evaluate("__office.opsTv()")
+        page.mouse.move(sum(p["x"] for p in pts) / 4, sum(p["y"] for p in pts) / 4)
+        for _ in range(14):
+            page.mouse.wheel(0, -120)
+            page.wait_for_timeout(50)
+        page.wait_for_timeout(600)
+        set_objects(page, [BOOKSHELF, PERSONNEL, decl_t("ok", 93.0, 43.0)], "ok")
+        pts = fr.evaluate("__office.opsTv()")
+        xs, ys = [p["x"] for p in pts], [p["y"] for p in pts]
+        page.mouse.move(5, 400)
+        page.wait_for_timeout(300)
+        page.screenshot(path=str(SHOTS / "office-ops-temp-tv.png"),
+                        clip={"x": max(0, min(xs) - 70), "y": max(0, min(ys) - 70), "width": max(xs) - min(xs) + 140, "height": max(ys) - min(ys) + 140})
         page.context.close()
 
     # ───────────────────────── 3. motion ─────────────────────────
@@ -571,6 +675,40 @@ def run(browser, base, engine):
     fr.evaluate("__office.objClose()")
     check("no page errors in the window", not page.errors, page.errors)
     page.context.close()
+
+    # ───────────────────────── 4b. the temperature section ─────────────────────────
+    print(f"[{engine}] the temperature section")
+    for variant, kinds in (("both", ["stat", "stat", "gauge", "spark"]), ("cpu", ["stat", "spark"]), ("none", ["stat"])):
+        for lang in ("zh", "en"):
+            page = office_page(browser, base, lang=lang, level="ok")
+            page.evaluate("(v) => { window.__fake.view = v; }", {"zh": view("ok", "zh", extra=with_temp(variant, "zh")), "en": view("ok", "en", extra=with_temp(variant, "en"))})
+            fr = open_lobby(page)
+            set_objects(page, [BOOKSHELF, PERSONNEL, decl("ok", lang=lang)], "ok")
+            click_tv(page, fr)
+            fr.wait_for_selector(".op-sec", timeout=8000)
+            page.wait_for_timeout(400)
+            w = win(fr)
+            ids = [x["id"] for x in w["secs"]]
+            sec = fr.evaluate("""() => { const e = document.querySelector('.op-sec[data-sec="temp"]'); return e ? { title: e.querySelector('h3').textContent, text: e.innerText,
+                kinds: [...e.querySelectorAll('.op-w')].map(x => x.className.replace('op-w op-w-', '')) } : null; }""")
+            check(f"{variant}/{lang}: the section sits after network and disk (before the top five)", ids == ["cpu", "mem", "net", "temp", "top", "day", "rules"], ids)
+            check(f"{variant}/{lang}: its widgets are {'+'.join(kinds)}", sec and sec["kinds"] == kinds, sec)
+            if variant == "both":
+                want = ["溫度", "CPU 溫度", "46.0°C", "acpitz", "GPU · NVIDIA GB10", "43°C", "共用記憶體", "功耗 11.0 W", "GPU 使用率", "12%", "最近 30 分鐘"] if lang == "zh" else \
+                       ["Temperature", "CPU temperature", "46.0°C", "acpitz", "GPU · NVIDIA GB10", "43°C", "Shared memory", "Power 11.0 W", "GPU utilization", "12%", "Last 30 minutes"]
+                check(f"{variant}/{lang}: CPU temperature and its sensor, the GPU card, utilization, the 30 minutes", sec and all(x in (sec["title"] + sec["text"]) for x in want), sec)
+                check(f"{variant}/{lang}: the spark has a CPU and a GPU line with the last values", fr.evaluate("""() => [...document.querySelectorAll('.op-sec[data-sec="temp"] .op-spark .ln')].length""") == 2
+                      and "46.0°C" in sec["text"] and "43°C" in sec["text"] and "46 °C" in sec["text"] and "43 °C" in sec["text"])
+            if variant == "none":
+                check(f"{variant}/{lang}: one line that says why, not an empty section", sec and ("macOS 需要管理員權限" if lang == "zh" else "macOS needs administrator rights") in sec["text"] and "—" in sec["text"], sec)
+            if lang == "en":
+                check(f"{variant}/en: no Chinese in the section", sec and not CJK.search(sec["title"] + sec["text"]), sec)
+            if shoot and variant == "both" and lang == "zh":
+                fr.evaluate("document.querySelector('.op-sec[data-sec=\"temp\"]').scrollIntoView({block: 'center'})")
+                page.wait_for_timeout(300)
+                page.screenshot(path=str(SHOTS / "office-ops-temp-detail.png"))
+            check(f"{variant}/{lang}: no page errors", not page.errors, page.errors)
+            page.context.close()
 
     # ───────────────────────── 5. 900 wide ─────────────────────────
     print(f"[{engine}] 1280 and 900 wide")
