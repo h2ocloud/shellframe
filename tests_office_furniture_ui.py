@@ -8,7 +8,7 @@ wall, by the sofa), so a second one was one too many, and it crowded the secreta
 IS the 書櫃 (office.html OBJ_FIXTURES: the red number and the click are on it) and only the cabinet is placed, in the
 stretch of back wall the page names as free (OBJ_SLOTS, behind the secretary). This test reads the lobby's layout
 (__office.lobbyLayout: the room's furniture, the secretary's desk, the interns' tables, the placed objects, the objects
-that are the room's pieces; the boards on the back wall) and checks, so that the next piece (the ops TV, …) is held to it too:
+that are the room's pieces; the boards on the back wall) and checks, so that the next piece is held to it too (the ops TV is: see the end of the run):
   - no two floor rectangles overlap; a placed object keeps at least 0.15 from everything else
   - a placed object stands against the back wall, inside the room, off the walkways (x≈1.0 along the left, the front strip)
   - a placed object does not stand in front of the whiteboard or the calendar
@@ -16,7 +16,9 @@ that are the room's pieces; the boards on the back wall) and checks, so that the
     secretary's rug stays open
   - the bookshelf is a hit target where the room draws it, and its red number is drawn over it (pixels)
   - a third piece that fits nowhere gets no furniture (its toolbar button stays) instead of overlapping
-office.html on its own (demo host), Chromium and WebKit. Screenshots (Chromium): qa-shots/office-lobby-furniture-{flat,iso}-1280.png.
+office.html on its own (demo host), Chromium and WebKit.   - the ops TV hangs on the back wall (WALL_OBJ.tv), takes no floor, and its quad on screen overlaps the filing cabinet, the counter and
+    the bookshelf in neither the 3D nor the flat view
+Screenshots (Chromium): qa-shots/office-lobby-furniture-{flat,iso}-1280.png, office-ops-tv-position-{flat,iso}-1280.png.
 Run: .venv/bin/python tests_office_furniture_ui.py
 """
 import functools
@@ -105,6 +107,47 @@ RED_NEAR = """(id) => { const b = __office.objPoint(id), cv = document.getElemen
 
 DEMO_OBJS_BADGE0 = DEMO_OBJS.replace("badge: 2,", "badge: 0,", 1)
 
+# screen-space geometry for the TV's non-overlap check (the TV's quad and the floor pieces' boxes, projected the way the room is drawn)
+TV_SCREEN = """() => { const L = __office.lobbyLayout(), out = { tv: __office.opsTv(), pieces: {} };
+  const box = f => { const pts = []; for (const x of [f.x0, f.x1]) for (const y of [f.y0, f.y1]) for (const z of [f.z0, f.z1]) pts.push(__office.proj(x, y, z)); return pts; };
+  for (const f of L.floor) if (f.id.startsWith('decor:counter') || f.id.startsWith('decor:shelf') || f.id.startsWith('obj:')) out.pieces[f.id] = box(f);
+  for (const f of L.fixtures) out.pieces[f.id] = box({ x0: f.x0, x1: f.x1, y0: f.y0, y1: f.y1, z0: 0, z1: f.z1 || 48 });
+  return out; }"""
+
+
+def hull(pts):
+    pts = sorted({(round(p["x"], 3), round(p["y"], 3)) for p in pts})
+    cr = lambda o, a, b: (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    lo, up = [], []
+    for p in pts:
+        while len(lo) >= 2 and cr(lo[-2], lo[-1], p) <= 0:
+            lo.pop()
+        lo.append(p)
+    for p in reversed(pts):
+        while len(up) >= 2 and cr(up[-2], up[-1], p) <= 0:
+            up.pop()
+        up.append(p)
+    return lo[:-1] + up[:-1]
+
+
+def convex_overlap(a, b):
+    """How far two convex polygons (lists of (x, y)) overlap on screen, in px: 0 when they only touch or are apart (separating axis)."""
+    best = 1e9
+    for poly in (a, b):
+        for i in range(len(poly)):
+            x1, y1 = poly[i]
+            x2, y2 = poly[(i + 1) % len(poly)]
+            nx, ny = -(y2 - y1), (x2 - x1)
+            n = (nx * nx + ny * ny) ** .5
+            nx, ny = nx / n, ny / n
+            pa, pb = [nx * p[0] + ny * p[1] for p in a], [nx * p[0] + ny * p[1] for p in b]
+            ov = min(max(pa), max(pb)) - max(min(pa), min(pb))
+            if ov <= 0:
+                return 0.0
+            best = min(best, ov)
+    return best
+
+
 srv = serve()
 base = f"http://127.0.0.1:{srv.server_port}"
 with sync_playwright() as pw:
@@ -166,6 +209,35 @@ with sync_playwright() as pw:
                 layout_checks(L, "with a third piece")
                 check("a third piece that fits nowhere gets no furniture (its toolbar button stays), it does not overlap",
                       dict(on).get("opstv") is False and page.evaluate("!!document.querySelector('#tools button[data-obj=\"opstv\"]')"), on)
+                # the ops TV (web/office_ops.js): on the wall like the whiteboard; it takes no floor and hides nothing, in 3D and in the flat view
+                page.evaluate(DEMO_OBJS, False)
+                floor_before = sorted(f["id"] for f in page.evaluate("__office.lobbyLayout()")["floor"])
+                page.evaluate("__office.opsSet(OfficeOps.demoObject((en, zh) => zh, 'alert'))")
+                page.wait_for_timeout(300)
+                L = page.evaluate("__office.lobbyLayout()")
+                tvw = next((w for w in L["wall"] if w["id"] == "tv"), None)
+                check("the TV is on the wall list with the contract's height band (22 to 60), and it adds no floor piece",
+                      tvw and tvw["z0"] == 22 and tvw["z1"] == 60 and sorted(f["id"] for f in L["floor"]) == floor_before, (tvw, floor_before))
+                others = [w for w in L["wall"] if w["id"] != "tv"]
+                check("the TV's stretch of the back wall is clear of the whiteboard and the calendar", tvw and all(w["x1"] <= tvw["x0"] or tvw["x1"] <= w["x0"] for w in others), (tvw, others))
+                layout_checks(L, "with the TV")
+                for mode in ("iso", "flat"):
+                    page.evaluate(f"__office.setMode('{mode}', true)")
+                    page.evaluate("__office.setArea && __office.setArea('lobby', true)")
+                    page.wait_for_timeout(600)
+                    o = page.evaluate(TV_SCREEN)
+                    tv = [(p["x"], p["y"]) for p in o["tv"]]
+                    hit = {k: round(convex_overlap(tv, hull(v)), 1) for k, v in o["pieces"].items()}
+                    check(f"{mode}: the TV's quad on screen does not overlap the filing cabinet, the counter or the bookshelf",
+                          "obj:personnel" in hit and any(k.startswith("decor:counter") for k in hit) and any(k.startswith("decor:shelf") for k in hit) and all(v == 0 for v in hit.values()), hit)
+                    check(f"{mode}: the TV's middle is a hit target ('tv')",
+                          page.evaluate("(k) => { const p = __office.wallPoint(k); return p ? __office.wallAt(p.x, p.y) : null; }", "tv") == "tv")
+                    if engine == "chromium":
+                        page.screenshot(path=str(SHOTS / f"office-ops-tv-position-{mode}-1280.png"))
+                page.evaluate("__office.opsSet(null)")
+                page.wait_for_timeout(200)
+                check("with no `ops` object the TV is gone and nothing is hit there", page.evaluate("__office.opsTv()") is None and page.evaluate("__office.wallPoint('tv')") is None)
+                page.evaluate("__office.setMode('iso', true)")
                 check("no page errors", not errors, errors)
                 page.close()
             finally:

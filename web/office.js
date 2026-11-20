@@ -635,6 +635,13 @@
     list: (id, q) => objectsHost.call('office_object_list', String(id), JSON.stringify(q || {})),
     item: (id, iid) => objectsHost.call('office_object_item', String(id), String(iid)),
     action: (id, iid, aid, args) => objectsHost.call('office_object_action', String(id), String(iid), String(aid), JSON.stringify(args || {})),
+    // The ops board's window (web/office_ops.js): its sections and widgets, and the "I am looking" signal (no lang: it carries none)
+    view: id => objectsHost.call('office_object_view', String(id)),
+    async live(id, on) {
+      const a = api();
+      if (!a || !a.office_object_live) return { success: false };
+      try { const r = await a.office_object_live(String(id), !!on); return (typeof r === 'string' ? JSON.parse(r) : r) || { success: false }; } catch (e) { return { success: false }; }
+    },
   };
   // The deliverables' counts ride on tasks_overview (the 9 s read above): the desks and the toolbar number follow without waiting for the
   // 30 s object refresh. Only the numbers: the object's list and entries are asked of the backend when the popup opens.

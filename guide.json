@@ -374,6 +374,23 @@
       }
     },
     {
+      "id": "office-ops",
+      "surfaces": [
+        "desktop"
+      ],
+      "since": "0.61.0",
+      "flag": "experimental_ops",
+      "open": "settings:office",
+      "title": {
+        "en": "Ops board",
+        "zh": "維運戰情"
+      },
+      "body": {
+        "en": "A TV on the office wall (and the Ops button at the bottom right) shows this computer's CPU, memory, network and disk. It turns red with the reason when something is wrong, and the sidebar's office button gets a dot. Click it for details. Off by default.",
+        "zh": "辦公室牆上的電視（和右下角的「維運」鈕）顯示這台電腦的 CPU、記憶體、網路、磁碟。出事時整台變紅、寫出原因，側欄的辦公室鈕冒紅點；點它看詳細數字和「什麼算異常」的規則。預設關閉。"
+      }
+    },
+    {
       "id": "deliverables",
       "surfaces": [
         "desktop"
