@@ -27,7 +27,8 @@ from sf_log import _swallow
 
 PREF_KEYS = ("seats", "items", "mode", "legendMin", "panelTab",      # panelTab: the panel's Conversation / Details tab
              "zoning", "groups",                                    # how staff are zoned; custom groups (role → name)
-             "calMode")                                             # the schedule calendar's day / week / month
+             "calMode",                                             # the schedule calendar's day / week / month
+             "arrange")                                             # where the paired computers' rooms stand: {v: 1, slots: {computer id: [col, row]}}
 PREFS_MAX = 256 * 1024
 _PREFS_LOCK = threading.Lock()
 

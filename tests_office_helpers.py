@@ -164,6 +164,13 @@ back = json.loads(app.office_prefs())["prefs"]
 check("saved and read back (the panel's tab too), unknown keys dropped", res["success"] and back == {
     "seats": {"eng": {"zone": "辦公區#1", "slot": 3}}, "items": {"eng": ["plant"]}, "mode": "flat", "legendMin": True,
     "panelTab": "info"}, back)
+ARR = {"v": 1, "slots": {"pid-a": [0, -1], "pid-b": [-1, 2]}}
+res = json.loads(app.office_prefs_save(json.dumps({**back, "arrange": ARR, "other": 1}, ensure_ascii=False)))
+back2 = json.loads(app.office_prefs())["prefs"]
+check("the room arrangement is a known key: kept with the other keys, none of them washed out",
+      res["success"] and back2.get("arrange") == ARR and {k: v for k, v in back2.items() if k != "arrange"} == back, back2)
+res = json.loads(app.office_prefs_save(json.dumps(back, ensure_ascii=False)))
+check("…and a save without it (Reset) drops it", res["success"] and "arrange" not in json.loads(app.office_prefs())["prefs"])
 check("…in the state folder, as office.json", api_office.prefs_file() == sf_config.state_dir() / "office.json"
       and api_office.prefs_file().exists())
 check("…config.json untouched", (cfg_file.read_text(encoding="utf-8") if cfg_file.exists() else None) == before)
