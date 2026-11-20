@@ -19,7 +19,8 @@ What it keeps (the state folder, never the office's own `office.json`, which the
   `ops.json`          the rules (on/off and number), the mute time and how the top five is ordered (`top_sort`:
                       auto, cpu or mem)
   `ops_history.json`  24 hours, 288 points, one per 5 minutes: time, CPU, memory %, pressure, swap, free disk %,
-                      network speeds, route. Written every 30 minutes and when the collector stops. Per core
+                      network speeds, route, CPU and GPU temperature (a point from before the temperatures has 9
+                      fields and is read with those two as None). Written every 30 minutes and when the collector stops. Per core
                       numbers and the top five are only ever the newest reading, never kept.
   Nothing is sent anywhere on its own; a paired computer may read the summary and the detail screen and keep it
   awake (2 s readings) over Frame Link (link_ops.py: `/link/ops`, `/link/ops/view`, `/link/ops/live`).
@@ -116,6 +117,11 @@ def _num(v):
 
 
 # ── words ──────────────────────────────────────────────────────────────────────
+def _temp(v):
+    """A saved temperature: a number in -40..150, else None (an old record has no such field)."""
+    return v if _num(v) is not None and -40 <= v <= 150 else None
+
+
 def fmt_bytes(n) -> str:
     if n is None:
         return "-"
@@ -156,7 +162,7 @@ class Collector:
         self._thread = None
         self.engine = ops_rules.Engine()
         self.recent = deque(maxlen=1500)         # light copies of the newest readings (30 minutes)
-        self.history = []                        # [t, cpu, mem %, pressure code, swap, free disk %, in, out, online]
+        self.history = []                        # [t, cpu, mem %, pressure code, swap, free disk %, in, out, online, cpu temp, gpu temp]
         self.latest = {}                         # the newest value of every field (a light sample keeps the memory ones)
         self.top = {}                            # {"cpu": [...], "mem": [...]}: the newest top five in each order
         self.top_sort = TOP_SORT_DEFAULT
@@ -183,7 +189,8 @@ class Collector:
         now = self.clock()
         rows = []
         for r in (got.get("points") if isinstance(got, dict) else None) or []:
-            if isinstance(r, list) and len(r) == 9 and _num(r[0]) and now - 86400 <= r[0] <= now + 60:
+            if isinstance(r, list) and len(r) in (9, 11) and _num(r[0]) and now - 86400 <= r[0] <= now + 60:
+                r = r + [None, None] if len(r) == 9 else r[:9] + [_temp(r[9]), _temp(r[10])]
                 rows.append(r)
         self.history = rows[-HISTORY_KEEP:]
         if self.history:
@@ -276,6 +283,12 @@ class Collector:
         now = self.clock() if now is None else now
         live = self.is_live(now)
         full = live or now - self._last_full_t >= FULL_EVERY_S
+        with self._lock:
+            watch_gpu = self.engine.building("gpu_temp_high")
+        try:
+            self.sampler.watch_gpu = watch_gpu            # a hot GPU is looked at on every 30 s round, not only every 5 minutes
+        except Exception:
+            pass
         sample = self.sampler.sample(full=full)           # subprocesses: no lock held
         want_top = live and now - self.top_t >= TOP_S
         top = self.sampler.top_both(5) if want_top else None
@@ -291,10 +304,15 @@ class Collector:
             for k, v in sample.items():
                 if v is not None or k in ("online",):
                     self.latest[k] = v
+            if sample.get("temp_supported") is True:         # a sensor that vanished is not shown at its last reading
+                self.latest["cpu_temp"], self.latest["cpu_temp_src"] = sample.get("cpu_temp"), sample.get("cpu_temp_src")
+            if sample.get("gpus") == []:                      # nvidia-smi was asked and gave nothing: the old cards are gone too
+                for k in ("gpus", "gpu_temp", "gpu_util"):
+                    self.latest.pop(k, None)
             if any(sample.get(k) is not None for k in ("cpu", "pressure", "swap_used", "disk_free_pct")):
                 self.updated = now                      # nothing readable (or an unsupported system): no stamp
             self.recent.append({k: sample.get(k) for k in ("t", "cpu", "mem_pct", "pressure", "net_in", "net_out",
-                                                          "online", "swap_used")})
+                                                          "online", "swap_used", "cpu_temp", "gpu_temp")})
             while self.recent and self.recent[0]["t"] < now - RECENT_KEEP_S:
                 self.recent.popleft()
             if self.sampler.kind != "none":
@@ -304,7 +322,8 @@ class Collector:
                 self.history.append([int(now), sample.get("cpu"), sample.get("mem_pct"),
                                      PRESSURE_CODE.get(sample.get("pressure")), sample.get("swap_used"),
                                      sample.get("disk_free_pct"), sample.get("net_in"), sample.get("net_out"),
-                                     None if sample.get("online") is None else bool(sample["online"])])
+                                     None if sample.get("online") is None else bool(sample["online"]),
+                                     _temp(sample.get("cpu_temp")), _temp(sample.get("gpu_temp"))])
                 del self.history[:-HISTORY_KEEP]
                 self._dirty = True
             flush_due = self._dirty and now - self._last_flush_t >= HISTORY_FLUSH_S
@@ -361,6 +380,7 @@ class Collector:
         with self._lock:
             latest = dict(self.latest)
             updated = self.updated
+            lines = {k: self.engine.cfg[k]["value"] for k in ("cpu_temp_high", "gpu_temp_high")}
             fresh = bool(self.history) and updated is not None and updated - self.history[-1][0] < 60
             spark = [r[2] for r in self.history[-12 if fresh else -11:] if r[2] is not None]
         if latest.get("mem_pct") is not None and not fresh:
@@ -378,7 +398,9 @@ class Collector:
                 "since": st["since"], "muted_until": st["muted_until"], "updated": updated,
                 "face": {"cpu": latest.get("cpu"), "mem": latest.get("mem_pct"), "pressure": latest.get("pressure"),
                          "net_in": latest.get("net_in"), "net_out": latest.get("net_out"), "online": latest.get("online"),
-                         "disk_free_pct": latest.get("disk_free_pct"), "spark": spark[-12:]}}
+                         "disk_free_pct": latest.get("disk_free_pct"), "spark": spark[-12:],
+                         "cpu_temp": latest.get("cpu_temp"), "gpu_temp": latest.get("gpu_temp"), "gpu_util": latest.get("gpu_util"),
+                         "cpu_temp_line": lines["cpu_temp_high"], "gpu_temp_line": lines["gpu_temp_high"]}}       # the lines are the rules' numbers now
 
     # ── actions ──
     def act(self, action_id, args, lang) -> dict:
@@ -487,6 +509,55 @@ class Collector:
                           "unit": s["unit"][L], "level": s["level"], "min": s["min"], "max": s["max"], "step": s["step"]})
         return items
 
+    @staticmethod
+    def _temp_tone(line, v):
+        """bad over the rule's line (the person's number), warn within 10 degrees under it."""
+        return "bad" if v > line else "warn" if v > line - 10 else "ok"
+
+    def _temp_section(self, latest, recent, now, t, cfg):
+        """CPU temperature (and where it was read), one card per GPU, the last 30 minutes; one line saying why when
+        there is nothing to read (macOS, a Windows CPU, a Linux computer with no sensor)."""
+        kind = self.sampler.kind
+        cpu_line, gpu_line = cfg["cpu_temp_high"]["value"], cfg["gpu_temp_high"]["value"]
+        cpu_t = latest.get("cpu_temp")
+        gpus = [g for g in (latest.get("gpus") or []) if isinstance(g, dict)][:4]
+        widgets = []
+        if cpu_t is None and not gpus:
+            why = {"mac": t("This computer cannot read temperatures (macOS needs administrator rights)",
+                            "這台電腦讀不到溫度（macOS 需要管理員權限）"),
+                   "win": t("This computer cannot read temperatures (Windows needs administrator rights for the CPU, and no NVIDIA graphics card was found)",
+                            "這台電腦讀不到溫度（Windows 的 CPU 溫度需要管理員權限，也沒有找到 NVIDIA 顯示卡）")}.get(
+                kind, t("This computer cannot read temperatures (no sensor was found)", "這台電腦讀不到溫度（找不到感測器）"))
+            widgets.append({"kind": "stat", "label": t("Temperature", "溫度"), "value": "—", "sub": why, "tone": "dim"})
+            return {"id": "temp", "title": t("Temperature", "溫度"), "widgets": widgets}
+        if cpu_t is not None:
+            widgets.append({"kind": "stat", "label": t("CPU temperature", "CPU 溫度"), "value": f"{cpu_t:.1f}°C",
+                            "sub": latest.get("cpu_temp_src") or "", "tone": self._temp_tone(cpu_line, cpu_t)})
+        else:
+            widgets.append({"kind": "stat", "label": t("CPU temperature", "CPU 溫度"), "value": "—", "tone": "dim",
+                            "sub": t("Needs administrator rights on Windows", "Windows 需要管理員權限") if kind == "win"
+                            else t("No sensor found", "找不到感測器")})
+        for i, g in enumerate(gpus):
+            name = (f"GPU {i} · " if len(gpus) > 1 else "GPU · ") + str(g.get("name") or "")
+            temp, util, used, total, power = (g.get(k) for k in ("temp", "util", "mem_used", "mem_total", "power"))
+            sub = [t("Memory ", "記憶體 ") + f"{fmt_bytes(used)} / {fmt_bytes(total)}" if used is not None and total is not None
+                   else t("Shared memory", "共用記憶體")]
+            if power is not None:
+                sub.append(t(f"Power {power:.1f} W", f"功耗 {power:.1f} W"))
+            widgets.append({"kind": "stat", "label": name, "value": "—" if temp is None else f"{temp:.0f}°C",
+                            "sub": " · ".join(sub), "tone": "dim" if temp is None else self._temp_tone(gpu_line, temp)})
+            if util is not None:
+                widgets.append({"kind": "gauge", "label": t("GPU utilization", "GPU 使用率"), "value": util,
+                                "text": f"{util:.0f}%", "tone": "info"})
+        series = []
+        for key, label, tone in (("cpu_temp", "CPU", "info"), ("gpu_temp", "GPU", "warn")):
+            values = self._hold(self._series(recent, key, now, 1800, 60), 60)
+            if any(v is not None for v in values):
+                series.append({"label": label, "values": values, "tone": tone})
+        if series:
+            widgets.append({"kind": "spark", "label": t("Last 30 minutes", "最近 30 分鐘"), "unit": "°C", "max": None, "series": series})
+        return {"id": "temp", "title": t("Temperature", "溫度"), "widgets": widgets}
+
     def _sections(self, latest, recent, history, top, top_sort, cfg, rise, active, now, t):
         sections = []
         # CPU
@@ -544,6 +615,7 @@ class Collector:
                             "sub": fmt_bytes(latest.get("disk_free")),
                             "tone": "bad" if free < line else "warn" if free < line * 1.5 else "ok"})
         sections.append({"id": "net", "title": t("Network and disk", "網路與磁碟"), "widgets": widgets})
+        sections.append(self._temp_section(latest, recent, now, t, cfg))
         # top five
         by, why = self.top_order(top_sort, latest)
         rows = [[(r["name"] + (f" ×{r['count']}" if r.get("count", 1) > 1 else "")), f"{r['cpu']:.0f}%", fmt_bytes(r["rss"])]
@@ -594,6 +666,21 @@ class Collector:
                   "mem": t(f"memory {latest.get('mem_pct') or 0:.0f}% used", f"記憶體已用 {latest.get('mem_pct') or 0:.0f}%"),
                   "swap": t(f"swap {fmt_bytes(latest.get('swap_used'))}", f"交換區已用 {fmt_bytes(latest.get('swap_used'))}")}[why]
         return t(f"Now ranked by memory ({reason})", f"現在照記憶體排（{reason}）")
+
+    @staticmethod
+    def _hold(values, step):
+        """Carry each reading forward over the empty cells after it, for HOLD_S at most (a normal 5-minute reading still draws a line)."""
+        out, last, age = [], None, 0
+        for v in values:
+            if v is not None:
+                last, age = v, 0
+            elif last is not None and (age + 1) * step <= HOLD_S:
+                age += 1
+                v = last
+            else:
+                last = None
+            out.append(v)
+        return out
 
     @staticmethod
     def _series(recent, key, now, span, step):

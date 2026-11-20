@@ -16,6 +16,19 @@ Platforms
           estimated from GlobalMemoryStatusEx's commit counters.
   other   `supported()` is False and the collector reports level "none".
 
+Temperatures (CPU and GPU; only ever read, never a sudo, powermetrics or private API)
+  Linux CPU    sysfs: `/sys/class/hwmon/*/name` + `temp*_input` (+ `temp*_label`), `/sys/class/thermal/thermal_zone*/{type,temp}`
+               (millidegrees). Pick order in `pick_cpu_temp`: a CPU hwmon (coretemp, k10temp, zenpower, cpu_thermal,
+               soc_thermal; its Package / Tdie / Tctl reading, else the hottest), then a thermal zone whose type says
+               cpu / x86_pkg_temp / soc, then the hottest `acpitz`. NVMe, Wi-Fi (`*_phy*`, iwlwifi), batteries, the
+               chipset and graphics cards are never taken for the CPU. `cpu_temp_src` names the sensor that won.
+  GPU          Linux and Windows, only when `nvidia-smi` runs (five seconds at most, at most every GPU_EVERY_S, and only in a
+               full sample, or in a light one while a GPU rule is building up: `watch_gpu`). `[N/A]` and `[Not Supported]`
+               (a GPU that shares memory with the CPU answers so for its memory) are None. `gpus` is one dict per card;
+               `[]` means it was asked and there was nothing (no command, a timeout), None that it was not asked this time.
+  macOS        no public no-permission way to read either: `temp_supported` is False and both stay None.
+  Windows CPU  needs administrator rights: `temp_supported` is False (the GPU is still read when `nvidia-smi` is there).
+
 Every subprocess has a timeout; any failure leaves that field None and never raises. A sample is a
 flat dict (see SAMPLE_KEYS); a field that could not be read is None. `Sampler.sample(full=False)`
 reads only what the rules need (CPU, pressure, swap, disk, route: no `vm_stat`, no `netstat`) and is
@@ -34,13 +47,18 @@ import time
 import wake_watch
 
 TIMEOUT = 3.0
+GPU_EVERY_S = 10.0          # nvidia-smi at most this often (the detail screen reads full samples every 2 s)
+GPU_TIMEOUT = 5.0
+GPU_MAX = 8
+TEMP_MIN_C, TEMP_MAX_C = 1.0, 150.0     # a sensor that says anything else is broken, not hot
 PRIME_GAP = 0.25            # the first sample reads CPU and network twice this far apart, so it has a speed
 WIN_PRESSURE_WARN_FREE_PCT = 10.0       # Windows has no direct pressure level; this is a free-memory estimate.
 WIN_PRESSURE_CRITICAL_FREE_PCT = 5.0    # Windows has no direct pressure level; this is a free-memory estimate.
 
 SAMPLE_KEYS = ("t", "cpu", "cores", "cores_p", "cores_e", "mem_total", "mem_used", "mem_pct", "mem_app",
                "mem_wired", "mem_compressed", "mem_cached", "swap_total", "swap_used", "pressure",
-               "net_in", "net_out", "iface", "online", "disk_total", "disk_free", "disk_free_pct")
+               "net_in", "net_out", "iface", "online", "disk_total", "disk_free", "disk_free_pct",
+               "cpu_temp", "cpu_temp_src", "gpus", "gpu_temp", "gpu_util", "temp_supported")
 
 
 def platform_kind() -> str:
@@ -331,6 +349,80 @@ def parse_proc_net_route(text):
     return (False, "") if seen or text else (None, "")
 
 
+# ── temperatures ──────────────────────────────────────────────────────────────
+CPU_HWMON = ("coretemp", "k10temp", "zenpower", "cpu_thermal", "soc_thermal")     # in this order of trust
+CPU_LABELS = ("package", "tdie", "tctl")    # Tdie before Tctl: on some Ryzen parts Tctl has an offset of 10-27 degrees added
+ZONE_CPU = ("cpu", "x86_pkg_temp", "soc")
+NOT_CPU = ("nvme", "wifi", "wlan", "iwl", "_phy", "phy0", "battery", "bat", "gpu", "ssd", "pch", "drive")
+GPU_QUERY = "name,temperature.gpu,utilization.gpu,memory.used,memory.total,power.draw"
+
+
+def _milli(text):
+    """Degrees C from a sysfs millidegree text, or None (empty, not a number, or out of TEMP_MIN_C..TEMP_MAX_C)."""
+    v = _num((text or "").strip())
+    if v is None:
+        return None
+    v /= 1000.0
+    return round(v, 1) if TEMP_MIN_C <= v <= TEMP_MAX_C else None
+
+
+def _not_cpu(name):
+    n = (name or "").lower()
+    return any(w in n for w in NOT_CPU)
+
+
+def pick_cpu_temp(hwmons, zones):
+    """(degrees C, source) of the CPU, or (None, ""). `hwmons`: [{"name", "temps": [(label, degrees)]}]; `zones`:
+    [{"type", "temp": degrees}]. See the module docstring for the order."""
+    bad = _not_cpu
+    for want in CPU_HWMON:
+        got = [h for h in hwmons if (h.get("name") or "").lower() == want and h.get("temps")]
+        if got:
+            temps = [(str(lab or "").lower(), v) for h in got for lab, v in h["temps"] if v is not None]
+            for key in CPU_LABELS:
+                hit = [v for lab, v in temps if lab.startswith(key)]
+                if hit:
+                    return max(hit), want
+            if temps:
+                return max(v for _, v in temps), want
+    cpu = [(z["type"], z["temp"]) for z in zones if z.get("temp") is not None and not bad(z.get("type"))
+           and any(w in (z.get("type") or "").lower() for w in ZONE_CPU)]
+    if cpu:
+        best = max(cpu, key=lambda r: r[1])
+        return best[1], best[0].strip()
+    acpi = [v for h in hwmons if (h.get("name") or "").lower() == "acpitz" for _, v in h.get("temps") or [] if v is not None]
+    acpi += [z["temp"] for z in zones if (z.get("type") or "").lower() == "acpitz" and z.get("temp") is not None]
+    return (max(acpi), "acpitz") if acpi else (None, "")
+
+
+def _csv_num(text, scale=1.0, lo=0.0, hi=1e15):
+    """One nvidia-smi field as a number: "[N/A]", "[Not Supported]", "N/A", "" and text are None."""
+    v = _num((text or "").strip())
+    return None if v is None or v != v or not lo <= v <= hi else v * scale
+
+
+def parse_nvidia_smi(text):
+    """[{"name", "temp", "util", "mem_used", "mem_total", "power"}] from `nvidia-smi --query-gpu=GPU_QUERY
+    --format=csv,noheader,nounits` (memory in MiB comes out as bytes), or [] when nothing can be read."""
+    out = []
+    for line in (text or "").splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < 6:
+            continue
+        name = ", ".join(parts[:-5]).strip()[:40] or "GPU"
+        temp, util, used, total, power = parts[-5:]
+        out.append({"name": name, "temp": _csv_num(temp, 1.0, TEMP_MIN_C, TEMP_MAX_C), "util": _csv_num(util, 1.0, 0, 100),
+                    "mem_used": _csv_num(used, 1048576.0), "mem_total": _csv_num(total, 1048576.0), "power": _csv_num(power, 1.0, 0, 5000)})
+    return out[:GPU_MAX]
+
+
+def gpu_summary(gpus):
+    """(hottest temperature, mean utilization) over the cards that have them; each None when no card has one."""
+    temps = [g["temp"] for g in gpus if g.get("temp") is not None]
+    utils = [g["util"] for g in gpus if g.get("util") is not None]
+    return (round(max(temps), 1) if temps else None, round(sum(utils) / len(utils), 1) if utils else None)
+
+
 def cpu_usage(prev, cur) -> list:
     """Per core percent from two readings of per core (user, system, idle, nice) ticks. Each state is
     subtracted on its own, modulo 2**32 (Apple's counters are 32 bit and wrap)."""
@@ -570,8 +662,12 @@ class Sampler:
     """Reads the computer. Keeps the previous CPU and network readings so each sample is a speed over
     the time since the last one. Not thread safe: one collector thread uses it."""
 
-    def __init__(self, kind=None, clock=time.time, runner=None, read_ticks=None):
+    def __init__(self, kind=None, clock=time.time, runner=None, read_ticks=None, sysfs="/sys"):
         self.kind = kind or platform_kind()
+        self.sysfs = sysfs                # a test points this at a fake tree
+        self.watch_gpu = False            # the collector sets it while a GPU rule is building up: light samples read the GPU too
+        self._gpu_t = None                # when nvidia-smi was last asked (an answer or not)
+        self._gpu_last = None             # (gpus, hottest, mean) of that answer
         self._clock = clock
         self._run = runner or run
         self._read_ticks = read_ticks
@@ -751,6 +847,63 @@ class Sampler:
             out["net_in"] = round((cur[0] - prev[2]) / dt, 1)
             out["net_out"] = round((cur[1] - prev[3]) / dt, 1)
 
+    # ── temperatures ──
+    def _listdir(self, path):
+        try:
+            return sorted(os.listdir(path))
+        except OSError:
+            return []
+
+    def _read_thermal(self):
+        """(hwmons, zones) as pick_cpu_temp takes them, from this Linux computer's sysfs. Unreadable files are skipped."""
+        hwmons, zones = [], []
+        base = os.path.join(self.sysfs, "class", "hwmon")
+        for d in self._listdir(base)[:64]:
+            path = os.path.join(base, d)
+            name = (self._read(os.path.join(path, "name")) or "").strip()
+            temps = []
+            if name.lower() in CPU_HWMON + ("acpitz",):          # NVMe, Wi-Fi and the rest are not even opened
+                for f in self._listdir(path):
+                    m = re.fullmatch(r"temp(\d+)_input", f)
+                    if m:
+                        v = _milli(self._read(os.path.join(path, f)))
+                        if v is not None:
+                            label = (self._read(os.path.join(path, f"temp{m.group(1)}_label")) or "").strip()
+                            temps.append((label, v))
+            hwmons.append({"name": name, "temps": temps})
+        base = os.path.join(self.sysfs, "class", "thermal")
+        for d in self._listdir(base)[:64]:
+            if d.startswith("thermal_zone"):
+                path = os.path.join(base, d)
+                typ = (self._read(os.path.join(path, "type")) or "").strip()
+                low = typ.lower()
+                cpuish = not _not_cpu(low) and any(w in low for w in ZONE_CPU) or low == "acpitz"      # only these are opened
+                zones.append({"type": typ, "temp": _milli(self._read(os.path.join(path, "temp"))) if cpuish else None})
+        return hwmons, zones
+
+    def _temps(self, out, full, now):
+        """CPU temperature (Linux: sysfs, cheap, every sample) and GPUs (`nvidia-smi`, throttled)."""
+        out["temp_supported"] = self.kind == "linux"          # macOS and the Windows CPU need rights this app never asks for
+        if self.kind == "linux":
+            try:
+                out["cpu_temp"], src = pick_cpu_temp(*self._read_thermal())
+                out["cpu_temp_src"] = src or None
+            except Exception:
+                pass
+        if self.kind in ("linux", "win") and (full or self.watch_gpu):
+            try:
+                self._gpu(out, now)
+            except Exception:
+                pass
+
+    def _gpu(self, out, now):
+        if self._gpu_t is None or now - self._gpu_t >= GPU_EVERY_S or now < self._gpu_t:
+            self._gpu_t = now
+            gpus = parse_nvidia_smi(self._run(["nvidia-smi", f"--query-gpu={GPU_QUERY}", "--format=csv,noheader,nounits"], GPU_TIMEOUT))
+            self._gpu_last = (gpus,) + gpu_summary(gpus)          # asked and got nothing: gpus is [] (the cards that were there are gone)
+        if self._gpu_last:
+            out["gpus"], out["gpu_temp"], out["gpu_util"] = self._gpu_last
+
     # ── one sample ──
     def sample(self, full=True, prime=True) -> dict:
         """A sample dict (SAMPLE_KEYS). `full=False` skips memory parts and network speed."""
@@ -807,6 +960,7 @@ class Sampler:
                 self._network(out, iface, now)
             except Exception:
                 pass
+        self._temps(out, full, now)
         return out
 
     def _ps(self):

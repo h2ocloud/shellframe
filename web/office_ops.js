@@ -81,6 +81,41 @@
     x.fillStyle = col; x.beginPath(); x.moveTo(cx, cy - s); x.lineTo(cx + s * 1.1, cy + s * .8); x.lineTo(cx - s * 1.1, cy + s * .8); x.closePath(); x.fill();
     x.fillStyle = '#1a0d12'; x.fillRect(cx - s * .1, cy - s * .35, s * .2, s * .6); x.fillRect(cx - s * .1, cy + s * .42, s * .2, s * .2);
   }
+  // The temperatures on the face: "CPU 46° · GPU 43°". A reading that is missing is left out; with neither the line is not drawn. A number over its
+  // line (the rule's number: 90 °C for the CPU and 85 °C for the GPU unless the person changed it) is drawn in the warning colour. `align`: 'l' from X, 'r' to X, 'c' around X.
+  const TEMP_LINE = { cpu: 90, gpu: 85 };                              // the rules' defaults, for a face that does not carry its own lines (an older computer)
+  function tempParts(f) {
+    const out = [];
+    if (!f) return out;
+    const c = num(f.cpu_temp), g = num(f.gpu_temp), cl = num(f.cpu_temp_line) == null ? TEMP_LINE.cpu : f.cpu_temp_line, gl = num(f.gpu_temp_line) == null ? TEMP_LINE.gpu : f.gpu_temp_line;
+    if (c != null) out.push({ k: 'CPU', v: Math.round(c) + '°', hot: c > cl });         // over the line the person set in the rule
+    if (g != null) out.push({ k: 'GPU', v: Math.round(g) + '°', hot: g > gl });
+    return out;
+  }
+  function drawTemps(x, parts, X, Y, px, maxW, align, FONT, dim) {
+    if (!parts.length) return;
+    let p = px;
+    const w = () => { x.font = `700 ${p}px ${FONT}`; return parts.reduce((a, q, i) => a + x.measureText(q.k + ' ' + q.v).width + (i ? x.measureText(' · ').width : 0), 0); };
+    while (p > 8 && w() > maxW) p -= 1;
+    let cx = align === 'r' ? X - w() : align === 'c' ? X - w() / 2 : X;
+    x.textAlign = 'left'; x.textBaseline = 'alphabetic';
+    parts.forEach((q, i) => {
+      if (i) { x.fillStyle = 'rgba(192,202,245,.4)'; x.fillText(' · ', cx, Y); cx += x.measureText(' · ').width; }
+      x.fillStyle = dim ? '#8d94b8' : 'rgba(192,202,245,.62)'; x.fillText(q.k + ' ', cx, Y); cx += x.measureText(q.k + ' ').width;
+      x.fillStyle = q.hot ? '#ff6b86' : dim ? '#9aa5ce' : '#e8ecff'; x.fillText(q.v, cx, Y); cx += x.measureText(q.v).width;
+    });
+  }
+  function drawTempStack(x, parts, X, Y0, Y1, px, maxW, FONT, dim) {       // one reading to a line, in the compact small TV's fourth column
+    if (!parts.length) return;
+    x.textAlign = 'left'; x.textBaseline = 'middle';
+    parts.forEach((q, i) => {
+      const cy = Y0 + (Y1 - Y0) * (i + .5) / parts.length, lab = q.k + ' ';
+      let p = px; x.font = `700 ${p}px ${FONT}`;
+      while (p > 8 && x.measureText(lab + q.v).width > maxW) { p -= 1; x.font = `700 ${p}px ${FONT}`; }
+      x.fillStyle = dim ? '#8d94b8' : 'rgba(192,202,245,.62)'; x.fillText(lab, X, cy);
+      x.fillStyle = q.hot ? '#ff6b86' : dim ? '#9aa5ce' : '#e8ecff'; x.fillText(q.v, X + x.measureText(lab).width, cy);
+    });
+  }
   function ageWords(tr, now, updated) {
     if (updated == null) return '';
     const m = Math.max(0, Math.floor((now - updated) / 60));
@@ -119,6 +154,7 @@
       x.fillStyle = '#d7defa'; x.font = `700 ${compact ? hh * .5 : 15}px ${FONT}`; x.textAlign = 'left'; x.fillText(tr('Ops', '維運'), 27, hh / 2);
       x.fillStyle = muted ? '#e0af68' : 'rgba(192,202,245,.62)'; x.font = `600 ${compact ? hh * .42 : 13}px ${FONT}`; x.textAlign = 'right';
       x.fillText(muted ? (st.muted_until ? tr('Muted until ', '靜音到 ') + hhmm(st.muted_until) : tr('Muted', '已靜音')) : tr('All normal', '一切正常'), FW - 10, hh / 2);
+      if (compact) drawTemps(x, tempParts(f), 138, hh / 2 + hh * .15, hh * .42, 110, 'c', FONT, muted);      // the short screen has no foot: the temperatures sit in the header
       y0 = hh;
     }
     const dim = lv === 'muted';
@@ -159,6 +195,7 @@
     const disk = f ? num(f.disk_free_pct) : null, age = bad ? tr('Click for details', '點一下看詳情') : ageWords(tr, g.now, st.updated);
     x.fillStyle = 'rgba(192,202,245,.55)'; x.font = `500 12px ${FONT}`; x.textBaseline = 'alphabetic'; x.textAlign = 'left';
     x.fillText(fitText(x, [disk == null ? '' : tr(`Disk ${Math.round(disk)}% free`, `磁碟剩 ${Math.round(disk)}%`), age].filter(Boolean).join('  ·  '), 176, 12, 500, FONT, 9), 10, H - 5);
+    drawTemps(x, tempParts(f), 10, bad || lv === 'warn' ? H - 16 : H - 19, bad || lv === 'warn' ? 11 : 12, 98, 'l', FONT, dim);       // a line above the foot, at the left (under the rings, clear of the memory's last readings)
   }
   // ── a paired computer's small TV: the same colours, three bars and the disk line; grey with the reason in words when there is nothing to show ──
   const GRAY = { off: ['Ops is off there', '那台沒打開維運戰情'], old: ['Older version there', '那台版本較舊'], offline: ['Cannot reach it', '連不上'],
@@ -199,14 +236,15 @@
       [tr('Memory', '記憶體'), mem, memCol, mem == null ? '–' : Math.round(mem) + '%'],
       [tr('Network', '網路'), ni == null ? null : clamp(Math.log10(1 + ni) / 8, 0, 1) * 100, off ? '#ff6b86' : '#7dcfff', off ? tr('Offline', '離線') : '↓ ' + fmtRate(ni)]];
     if (compact) {                                                    // three readings in a row, each with a bar under it
-      const fs = Math.max(10, H * .3), by = H - H * .22;
+      const tp = tempParts(f), step = tp.length ? 68 : 100, fs = Math.max(10, H * .3) * (tp.length ? .8 : 1), by = H - H * .22;     // with temperatures the three narrow and a fourth column takes them
       rows.forEach(([lab, v, col, txt], i) => {
-        const X = 10 + i * 100;
-        x.textAlign = 'left'; x.fillStyle = dim ? '#9aa5ce' : '#e8ecff'; x.font = `700 ${fs}px ${FONT}`;
-        x.fillText(fitText(x, i < 2 ? lab + ' ' + txt : txt, 90, fs, 700, FONT, 9), X, H * .36);
-        x.fillStyle = 'rgba(192,202,245,.14)'; x.fillRect(X, by, 86, 3);
-        if (v != null) { x.fillStyle = dim ? '#6b7399' : col; x.fillRect(X, by, 86 * clamp(v, 0, 100) / 100, 3); }
+        const X = 10 + i * step;
+        x.textAlign = 'left'; x.textBaseline = 'middle'; x.fillStyle = dim ? '#9aa5ce' : '#e8ecff'; x.font = `700 ${fs}px ${FONT}`;
+        x.fillText(fitText(x, i < 2 ? lab + ' ' + txt : txt, step - 10, fs, 700, FONT, 8), X, H * .36);
+        x.fillStyle = 'rgba(192,202,245,.14)'; x.fillRect(X, by, step - 14, 3);
+        if (v != null) { x.fillStyle = dim ? '#6b7399' : col; x.fillRect(X, by, (step - 14) * clamp(v, 0, 100) / 100, 3); }
       });
+      drawTempStack(x, tp, 10 + 3 * step + 4, H * .12, H * .78, Math.max(9, H * .24), FW - 10 - (10 + 3 * step + 4), FONT, dim);
       return;
     }
     if (bad || warn) {
@@ -230,6 +268,7 @@
     const disk = f ? num(f.disk_free_pct) : null;
     x.textAlign = 'left'; x.textBaseline = 'alphabetic'; x.fillStyle = 'rgba(192,202,245,.62)'; x.font = `600 ${Math.round(H * .11)}px ${FONT}`;
     x.fillText(disk == null ? '' : tr(`Disk ${Math.round(disk)}% free`, `磁碟剩 ${Math.round(disk)}%`), 10, H - 5);
+    drawTemps(x, tempParts(f), FW - 8, H - 5, Math.round(H * .11), 150, 'r', FONT, dim);
   }
   // The TV on the wall: the glow (an alert only, and only pulsing when motion is allowed), the frame, the face, the red mark.
   function draw(x, g, st) {
@@ -587,6 +626,10 @@
           { kind: 'stat', label: T_('Swap', '交換區'), value: '3.2 GB', sub: T_('+1.1 GB in 30 minutes', '30 分鐘 +1.1 GB'), tone: 'warn' }] },
         { id: 'net', title: T_('Network and disk', '網路與磁碟'), widgets: [{ kind: 'spark', label: T_('Down / up', '下載／上傳'), unit: 'MB/s', series: [{ label: T_('Down', '下載'), values: [0.8, 1.2, 1.9, 1.1, 1.4], tone: 'info' }, { label: T_('Up', '上傳'), values: [0.2, 0.3, 0.2, 0.4, 0.3], tone: 'dim' }] },
           { kind: 'stat', label: T_('Disk free', '磁碟剩餘'), value: '38%', sub: '182 GB', tone: 'ok' }] },
+        { id: 'temp', title: T_('Temperature', '溫度'), widgets: [{ kind: 'stat', label: T_('CPU temperature', 'CPU 溫度'), value: '46.0°C', sub: 'acpitz', tone: 'ok' },
+          { kind: 'stat', label: 'GPU · NVIDIA GB10', value: '43°C', sub: T_('Shared memory · Power 11.0 W', '共用記憶體 · 功耗 11.0 W'), tone: 'ok' },
+          { kind: 'gauge', label: T_('GPU utilization', 'GPU 使用率'), value: 12, text: '12%', tone: 'info' },
+          { kind: 'spark', label: T_('Last 30 minutes', '最近 30 分鐘'), unit: '°C', series: [{ label: 'CPU', values: [44, 45, 45, 46, 47, 46, 46], tone: 'info' }, { label: 'GPU', values: [41, 42, 43, 43, 44, 43, 43], tone: 'warn' }] }] },
         { id: 'top', title: T_('Top 5 by use', '吃資源前 5 名'), widgets: [{ kind: 'table', columns: [T_('Program', '程式'), 'CPU', T_('Memory', '記憶體')], switch: { action: 'top_sort', value: 'auto', options: [{ id: 'auto', label: T_('Auto', '自動') }, { id: 'cpu', label: 'CPU' }, { id: 'mem', label: T_('Memory', '記憶體') }], note: T_('Now ranked by CPU', '現在照 CPU 排') }, rows: [['示範瀏覽器', '24%', '3.1 GB'], ['示範建置程序', '19%', '2.4 GB'], ['示範編輯器', '7%', '1.9 GB']] }] },
         { id: 'day', title: T_('Last 24 hours', '最近 24 小時'), widgets: [{ kind: 'strip', label: T_('Memory pressure (every 5 minutes)', '記憶體壓力（每 5 分鐘）'), start: t0 - 86400, step_s: 300, cells: cells(288, lv === 'ok' ? 0 : 3) }] },
         { id: 'rules', title: T_('What counts as wrong', '什麼算異常'), widgets: [{ kind: 'rules', items: [
@@ -599,7 +642,7 @@
     peerLive: async () => ({ success: true }) });
   const demoObject = (T, level) => Object.assign({ id: 'ops', title: T('Ops', '維運'), furniture: 'tv', place: 'lobby:wall', button: false, badge: level === 'alert' ? 1 : 0, filters: [], sorts: [], actions: [],
     hint: '', level: level || 'ok', reason: level === 'alert' || level === 'warn' ? T('Memory pressure high for 12 minutes', '記憶體壓力高 12 分鐘') : '', since: null, muted_until: level === 'muted' ? Math.floor(Date.now() / 1000) + 2400 : null, updated: Math.floor(Date.now() / 1000) - 20,
-    face: level === 'none' ? null : { cpu: 23.5, mem: level === 'alert' ? 93 : 61, pressure: level === 'alert' ? 'critical' : 'normal', net_in: 1.2e6, net_out: 3e5, online: true, disk_free_pct: 38, spark: [55, 57, 60, 61, 64, 70, 78, 93] } });
+    face: level === 'none' ? null : { cpu: 23.5, mem: level === 'alert' ? 93 : 61, pressure: level === 'alert' ? 'critical' : 'normal', net_in: 1.2e6, net_out: 3e5, online: true, disk_free_pct: 38, spark: [55, 57, 60, 61, 64, 70, 78, 93], cpu_temp: 46, gpu_temp: 43, gpu_util: 12 } });
 
-  root.OfficeOps = { create, demoView, demoHost, demoObject, tvState, peerNorm, GRAY, fmtBytes, fmtRate, KINDS: Object.keys(KINDS) };
+  root.OfficeOps = { create, demoView, demoHost, demoObject, tvState, peerNorm, tempParts, GRAY, fmtBytes, fmtRate, KINDS: Object.keys(KINDS) };
 })(typeof window !== 'undefined' ? window : globalThis);
