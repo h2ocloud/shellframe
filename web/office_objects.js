@@ -2,7 +2,8 @@
  *
  * Loaded by office.html (the iframe). Nothing here knows the bookshelf or the personnel cabinet: an object is a
  * declaration {id, title, furniture, place, button, filters, sorts, actions, badge …} and the popup draws whatever the
- * host answers, so a new object (a deliverables desk, an ops TV) is a backend object plus a line of furniture, not new UI.
+ * host answers, so a new object (a deliverables desk) is a backend object plus a line of furniture, not new UI. The one exception is the ops TV
+ * (furniture 'tv'): it hangs on the wall and has its own window, web/office_ops.js.
  *
  *   OfficeObjects.create(env) -> ctl            env: { host, tr, doc, kick, callbacks… } (office.html passes them)
  *   ctl.setObjects(list)    the declarations with their badge (the snapshot's `objects`); builds the toolbar buttons
@@ -64,7 +65,7 @@
     function place() {                                      // id → {x0, x1, y0, y1, k, given}
       const out = {}, next = SLOTS.map(s => s[0]), used = new Set();
       for (const o of objs) {
-        if (o.place === 'button') continue;
+        if (o.place === 'button' || o.furniture === 'tv') continue;      // the ops TV hangs on the wall (office.html's WALL_OBJ.tv); it takes no floor
         const f = FIXTURES.findIndex((x, j) => !used.has(j) && x.furniture === o.furniture);
         if (f < 0) continue;
         used.add(f);
@@ -72,7 +73,7 @@
         out[o.id] = { x0: x.x0, x1: x.x1, y0: x.y0, y1: x.y1, k: { w: x.x1 - x.x0, d: x.y1 - x.y0, h: x.h }, given: true, on: x.on || '' };
       }
       for (const o of objs) {
-        if (o.place === 'button' || out[o.id]) continue;        // no furniture: only the toolbar button (the deliverables' desks are on the people's desks)
+        if (o.place === 'button' || o.furniture === 'tv' || out[o.id]) continue;        // no furniture: only the toolbar button (the deliverables' desks are on the people's desks)
         const k = KINDS[o.furniture] || KINDS.generic;
         const i = SLOTS.findIndex((s, j) => next[j] + k.w <= s[1] + 1e-9);
         if (i < 0) continue;
@@ -151,10 +152,10 @@
     function paintButtons() {
       const bar = doc.getElementById('tools');
       if (!bar) return;
-      for (const b of Array.from(bar.querySelectorAll('button[data-obj]'))) if (!find(b.dataset.obj) || !find(b.dataset.obj).button) b.remove();
+      for (const b of Array.from(bar.querySelectorAll('button[data-obj]'))) if (!find(b.dataset.obj) || !find(b.dataset.obj).button || find(b.dataset.obj).furniture === 'tv') b.remove();
       let anchor = doc.getElementById('resetSeats');
       for (const o of objs) {
-        if (!o.button) continue;
+        if (!o.button || o.furniture === 'tv') continue;      // the ops TV has its own button and window (web/office_ops.js)
         let b = bar.querySelector(`button[data-obj="${o.id}"]`);
         if (!b) {
           b = doc.createElement('button');
