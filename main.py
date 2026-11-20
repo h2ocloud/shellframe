@@ -257,6 +257,9 @@ DEFAULT_CONFIG = {
         # The office's ops TV (office_ops.py): a lobby-wall TV for this computer's CPU, memory, network and disk,
         # a red dot and one system notification when something stays wrong. Off: no sampler thread runs.
         "experimental_ops": False,
+        # The Chat/Terminal switch (the button at the top, Cmd+Shift+M) changes every tab at once, the same as
+        # `ui_style`. True: it changes only the tab you are on (web/chat.js: perTab).
+        "view_switch_per_tab": False,
         # Agents addressing each other with [[SF:TO:<role>|<text>]]. Off by
         # default: delivery writes into another agent's prompt unattended, and
         # every tab runs with permissions bypassed. Rules live in agent_link.py.

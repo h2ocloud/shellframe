@@ -626,9 +626,14 @@
   // The setting: what a tab opens on. Anything but "chat" is the terminal.
   const globalStyle = () => ((settings() || {}).ui_style === 'chat' ? 'chat' : 'cli');
 
-  // One rule for the per-tab switch: it is kept on that tab (switching tabs does not
-  // undo it) until the tab closes or the setting is changed, which puts every tab
-  // back on the setting. Kept with the tab's own object, so a reused id starts clean.
+  // The switch (the button at the top, ⌘⇧M, the view's own Terminal button) changes every tab at once: it is
+  // the setting above, saved. Settings → Advanced → "Each tab switches on its own" (view_switch_per_tab, off
+  // by default) turns it back to one tab only.
+  const perTab = () => (settings() || {}).view_switch_per_tab === true;
+
+  // One rule for the per-tab switch (only used while that option is on, or by setMode): it is kept on that
+  // tab (switching tabs does not undo it) until the tab closes or the setting is changed, which puts every
+  // tab back on the setting. Kept with the tab's own object, so a reused id starts clean.
   const tabChoice = new Map();
   function modeOf(sid) {
     const e = tabChoice.get(sid);
@@ -750,6 +755,7 @@
     }, true);
     mountSwitch();
     mountSettings();
+    mountPerTab();
     mountNewConvo();
     return true;
   }
@@ -766,7 +772,7 @@
     bar.insertBefore(sw, spacer ? spacer.nextSibling : null);
     sw.addEventListener('click', e => {
       const b = e.target.closest('button[data-mode]');
-      if (b && !b.disabled) setMode(activeSid(), b.dataset.mode);
+      if (b && !b.disabled) switchView(activeSid(), b.dataset.mode);
     });
   }
 
@@ -791,7 +797,40 @@
     }
     syncSettings();
   }
+  // Settings → Advanced: one switch, "each tab switches on its own".
+  function mountPerTab() {
+    const card = document.querySelector('#settings-panel-advanced .sx-card');
+    if (!card || document.getElementById('setting-view-per-tab')) return;
+    const row = document.createElement('div');
+    row.className = 'sx-row';
+    row.innerHTML = '<div class="sx-txt"><div class="sx-label"></div><div class="sx-hint"></div></div>' +
+      '<div class="sx-ctl"><button class="toggle-switch" id="setting-view-per-tab" role="switch"></button></div>';
+    card.insertBefore(row, card.firstChild);
+    row.querySelector('#setting-view-per-tab').addEventListener('click', async () => {
+      const st = settings();
+      if (!st) return;
+      st.view_switch_per_tab = !perTab();
+      tabChoice.clear();                       // either way, every tab goes back to the one setting
+      syncSettings();
+      apply(false);
+      try { host().renderSidebar && host().renderSidebar(); host().renderTabs && host().renderTabs(); } catch (_) {}
+      try { await api().save_settings(JSON.stringify(st)); } catch (_) { /* the page keeps it; next save carries it */ }
+    });
+  }
+  function syncPerTab() {
+    const b = document.getElementById('setting-view-per-tab');
+    if (!b) return;
+    const row = b.closest('.sx-row');
+    row.querySelector('.sx-label').textContent = T('Each tab switches between chat and terminal on its own', '每個分頁各自切換對話／終端機');
+    row.querySelector('.sx-hint').textContent = T(
+      `Off: the switch at the top and ${KEY_LABEL} change every tab at once, the same as Interface style. On: they change only the tab you are on, and it stays that way until the tab closes or Interface style changes.`,
+      `關閉：上方的切換鈕和 ${KEY_LABEL} 會讓全部分頁一起切換，等於改「介面風格」。開啟：只切換目前這個分頁，會一直記在那個分頁上，直到分頁關掉或「介面風格」改了。`);
+    b.classList.toggle('on', perTab());
+    b.setAttribute('aria-checked', String(perTab()));
+    b.setAttribute('aria-label', row.querySelector('.sx-label').textContent);
+  }
   function syncSettings() {
+    syncPerTab();
     const row = document.querySelector('.cm-setting');
     if (!row) return;
     row.querySelector('.cm-set-label').textContent = T('Interface style', '介面風格');
@@ -802,19 +841,19 @@
     c.classList.toggle('active', style === 'chat');
     l.classList.toggle('active', style === 'cli');
     row.querySelector('.cm-set-hint').textContent = T(
-      `What a tab opens on. Chat shows the conversation with buttons for questions; Native CLI shows the terminal as it is. Each tab can switch on its own (the switch at the top, ${KEY_LABEL}) and keeps that until it closes or this changes. Claude Code, Codex, OpenCode, Grok, Pi and Cursor tabs have the chat view; Antigravity and terminal tabs always show their terminal.`,
-      `打開分頁時預設看到的畫面。「對話」顯示對話內容，要你決定的事會變成按鈕；「原生 CLI」就是終端機原本的樣子。每個分頁都能單獨切換（上方的切換鈕，或 ${KEY_LABEL}），會一直記在那個分頁上，直到分頁關掉或這裡改了。Claude Code、Codex、OpenCode、Grok、Pi、Cursor 分頁有對話畫面；Antigravity 和終端機分頁一律顯示終端機。`);
+      `What every tab shows, and what a new tab opens on. Chat shows the conversation with buttons for questions; Native CLI shows the terminal as it is. The switch at the top (${KEY_LABEL}) changes this for all tabs at once${perTab() ? ', unless Advanced has each tab switching on its own, which is on now' : ' (Advanced has an option to switch each tab on its own)'}. Claude Code, Codex, OpenCode, Grok, Pi and Cursor tabs have the chat view; Antigravity and terminal tabs always show their terminal.`,
+      `全部分頁看到的畫面，新開的分頁也照這個。「對話」顯示對話內容，要你決定的事會變成按鈕；「原生 CLI」就是終端機原本的樣子。上方的切換鈕（或 ${KEY_LABEL}）會讓全部分頁一起切換${perTab() ? '；「進階」裡的「每個分頁各自切換」現在是開著的，切換只影響目前分頁' : '（「進階」裡可以改成每個分頁各自切換）'}。Claude Code、Codex、OpenCode、Grok、Pi、Cursor 分頁有對話畫面；Antigravity 和終端機分頁一律顯示終端機。`);
   }
 
   async function setStyle(style) {
     const st = settings();
     if (!st || (style !== 'chat' && style !== 'cli')) return;
     st.ui_style = style;
-    tabChoice.clear();
+    tabChoice.clear();                          // every tab goes back to the setting
     syncSettings();
-    try { await api().save_settings(JSON.stringify(st)); } catch (_) { /* the page keeps it; next save carries it */ }
-    apply(true);
+    apply(true);                                // at once; the save below only has to keep it
     try { host().renderSidebar && host().renderSidebar(); host().renderTabs && host().renderTabs(); } catch (_) {}
+    try { await api().save_settings(JSON.stringify(st)); } catch (_) { /* the page keeps it; next save carries it */ }
   }
   function setMode(sid, mode) {
     const s = sessions()[sid];
@@ -822,10 +861,22 @@
     tabChoice.set(sid, { mode, obj: s });
     apply(true);
   }
+  // What the person's switch does: every tab (the setting, saved) or, with the Advanced option, this tab only.
+  function switchView(sid, mode) {
+    if (mode !== 'chat' && mode !== 'cli') return;
+    if (perTab()) return setMode(sid, mode);
+    return setStyle(mode);
+  }
   function toggle() {
     const sid = activeSid();
-    if (!sid || !chatCapable(sid)) return;
-    setMode(sid, modeOf(sid) === 'chat' ? 'cli' : 'chat');
+    if (!sid) return;
+    if (perTab()) {
+      if (!chatCapable(sid)) return;
+      return setMode(sid, modeOf(sid) === 'chat' ? 'cli' : 'chat');
+    }
+    // all tabs: a tab with no conversation can still send everyone back to the terminals, but "to chat" from it shows nothing
+    if (globalStyle() === 'cli' && !chatCapable(sid)) return;
+    return setStyle(globalStyle() === 'chat' ? 'cli' : 'chat');
   }
 
   // ── show / hide ────────────────────────────────────────────────────────
@@ -893,9 +944,12 @@
     c.classList.toggle('active', capable && mode === 'chat');
     l.classList.toggle('active', !capable || mode !== 'chat');
     c.disabled = !capable;
-    c.title = capable ? T(`Show this tab as a conversation (${KEY_LABEL})`, `這個分頁看對話（${KEY_LABEL}）`)
-                      : T('This tab has no conversation to show: it is a terminal', '這個分頁沒有對話可以顯示：它是終端機');
-    l.title = T(`Show this tab's terminal (${KEY_LABEL})`, `這個分頁看終端機（${KEY_LABEL}）`);
+    const all = !perTab();
+    c.title = !capable ? T('This tab has no conversation to show: it is a terminal', '這個分頁沒有對話可以顯示：它是終端機')
+      : all ? T(`Show all tabs as conversations (${KEY_LABEL})`, `全部分頁看對話（${KEY_LABEL}）`)
+      : T(`Show this tab as a conversation (${KEY_LABEL})`, `這個分頁看對話（${KEY_LABEL}）`);
+    l.title = all ? T(`Show all tabs as terminals (${KEY_LABEL})`, `全部分頁看終端機（${KEY_LABEL}）`)
+      : T(`Show this tab's terminal (${KEY_LABEL})`, `這個分頁看終端機（${KEY_LABEL}）`);
   }
 
   // ── chat style: no tab bar ───────────────────────────────────────────────
@@ -1969,7 +2023,7 @@
       return;
     }
     if (act === 'unattach') { const v = view(sid); (v.files || []).splice(+el.dataset.i, 1); renderAttach(sid); return; }
-    if (act === 'to-term') return setMode(sid, 'cli');
+    if (act === 'to-term') return switchView(sid, 'cli');
     if (act === 'model') { if (root.SFTabModel) root.SFTabModel.open(sid, el); return; }
     if (act === 'ask-dismiss') { view(sid).askDismissed = el.dataset.key; return renderAsk(sid); }
     if (act === 'sidebar') { const b = document.getElementById('btn-sidebar'); if (b) b.click(); return; }
@@ -2013,7 +2067,7 @@
     return d.text ? (d.detail ? `${d.text} · ${d.detail}` : d.text) : '';
   }
 
-  root.SFChat = { call, onSwitch, covers, sidebarLine, apply, rules: RULES, modeOf, setStyle, setMode, label, attach, selectedText, insert, relabel, quoteOf, reply };
+  root.SFChat = { call, onSwitch, covers, sidebarLine, apply, rules: RULES, modeOf, setStyle, setMode, switchView, toggle, label, attach, selectedText, insert, relabel, quoteOf, reply };
   const boot = () => { mount(); apply(false); setInterval(tick, POLL_MS); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();

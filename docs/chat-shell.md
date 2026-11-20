@@ -61,9 +61,13 @@ running underneath with its size unchanged, and everything that types into the t
 
 ## Switching
 
-- **Settings → Interface style** (`settings.ui_style`: `chat` | `cli`) is what a tab opens on.
-- **Per tab**: the Chat/Terminal switch (in the tab bar, or in chat style in the terminal's
-  header), the view's own "Terminal" button, or ⌘⇧M / Ctrl+Shift+M. The choice stays on that tab (switching tabs does not undo it)
+- **Settings → Interface style** (`settings.ui_style`: `chat` | `cli`) is what every tab shows, and what a new tab opens on.
+- **The switch changes every tab at once**: the Chat/Terminal switch (in the tab bar, or in chat style in the
+  terminal's header), the view's own "Terminal" button and ⌘⇧M / Ctrl+Shift+M all do what the setting does
+  (`setStyle`: it is saved, and it clears any one tab's own choice). A tab with no conversation to show (a terminal
+  tab, Antigravity, an old remote one) stays on its terminal when the setting is Chat.
+- **Per tab (Settings → Advanced, `settings.view_switch_per_tab`, off by default)**: the same controls change only the
+  tab you are on. The choice stays on that tab (switching tabs does not undo it)
   until the tab closes or the setting changes, which puts every tab back on the setting.
   It is kept with the tab's object, so a reused tab id starts from the setting.
 - **New or existing computer**: a first launch has no `config.json` and gets
