@@ -18,7 +18,8 @@ that are the room's pieces; the boards on the back wall) and checks, so that the
   - a third piece that fits nowhere gets no furniture (its toolbar button stays) instead of overlapping
 office.html on its own (demo host), Chromium and WebKit.   - the ops TV hangs on the back wall (WALL_OBJ.tv), takes no floor, and its quad on screen overlaps the filing cabinet, the counter and
     the bookshelf in neither the 3D nor the flat view
-Screenshots (Chromium): qa-shots/office-lobby-furniture-{flat,iso}-1280.png, office-ops-tv-position-{flat,iso}-1280.png.
+  - the lobby's name plate moves out of the TV's way: its rectangle overlaps the TV, the whiteboard, the calendar and the cabinet in neither view
+Screenshots (Chromium): qa-shots/office-lobby-furniture-{flat,iso}-1280.png, office-ops-tv-position-{flat,iso}-1280.png, office-lobby-plate-iso-1280.png.
 Run: .venv/bin/python tests_office_furniture_ui.py
 """
 import functools
@@ -230,12 +231,37 @@ with sync_playwright() as pw:
                     hit = {k: round(convex_overlap(tv, hull(v)), 1) for k, v in o["pieces"].items()}
                     check(f"{mode}: the TV's quad on screen does not overlap the filing cabinet, the counter or the bookshelf",
                           "obj:personnel" in hit and any(k.startswith("decor:counter") for k in hit) and any(k.startswith("decor:shelf") for k in hit) and all(v == 0 for v in hit.values()), hit)
+                    sg = page.evaluate("__office.signRect('lobby')")
+                    rect = [(sg["x"], sg["y"]), (sg["x"] + sg["w"], sg["y"]), (sg["x"] + sg["w"], sg["y"] + sg["h"]), (sg["x"], sg["y"] + sg["h"])]
+                    quads = page.evaluate("__office.wallQuads()")
+                    over = {k: round(convex_overlap(rect, [(p["x"], p["y"]) for p in q]), 1) for k, q in quads.items()}
+                    check(f"{mode}: the lobby's name plate overlaps neither the TV nor the whiteboard, the calendar or the cabinet",
+                          {"tv", "board", "cal", "obj:personnel"} <= set(over) and all(v == 0 for v in over.values()), (over, sg))
+                    check(f"{mode}: the plate is still on the screen and over the lobby's back wall (not thrown off to the side)",
+                          0 <= sg["x"] and sg["x"] + sg["w"] <= 1280 and sg["y"] >= 0, sg)
                     check(f"{mode}: the TV's middle is a hit target ('tv')",
                           page.evaluate("(k) => { const p = __office.wallPoint(k); return p ? __office.wallAt(p.x, p.y) : null; }", "tv") == "tv")
                     if engine == "chromium":
                         page.screenshot(path=str(SHOTS / f"office-ops-tv-position-{mode}-1280.png"))
+                        if mode == "iso":
+                            page.screenshot(path=str(SHOTS / "office-lobby-plate-iso-1280.png"))
                 page.evaluate("__office.opsSet(null)")
                 page.wait_for_timeout(200)
+                page.evaluate("__office.setMode('iso', true)")
+                page.wait_for_timeout(400)
+                sg0 = page.evaluate("__office.signRect('lobby')")
+                page.evaluate("__office.opsSet(OfficeOps.demoObject((en, zh) => zh, 'alert'))")
+                page.wait_for_timeout(300)
+                sg1 = page.evaluate("__office.signRect('lobby')")
+                tvq = [(p["x"], p["y"]) for p in page.evaluate("__office.opsTv()")]
+                rect_of = lambda g: [(g["x"], g["y"]), (g["x"] + g["w"], g["y"]), (g["x"] + g["w"], g["y"] + g["h"]), (g["x"], g["y"] + g["h"])]
+                still = page.evaluate("__office.signRect('lobby', true)")
+                check("3D: where the plate used to hang it would overlap the TV (so the check above has teeth), and now it has moved",
+                      convex_overlap(rect_of(still), tvq) > 0 and abs(sg1["x"] - sg0["x"]) + abs(sg1["y"] - sg0["y"]) > 1, (sg0, sg1, still))
+                page.evaluate("__office.opsSet(null)")
+                page.wait_for_timeout(300)
+                check("the plate moves only while the TV is on the wall: with no TV it is back where it was",
+                      abs(page.evaluate("__office.signRect('lobby')")["x"] - sg0["x"]) < 0.01 and abs(page.evaluate("__office.signRect('lobby')")["y"] - sg0["y"]) < 0.01)
                 check("with no `ops` object the TV is gone and nothing is hit there", page.evaluate("__office.opsTv()") is None and page.evaluate("__office.wallPoint('tv')") is None)
                 page.evaluate("__office.setMode('iso', true)")
                 check("no page errors", not errors, errors)

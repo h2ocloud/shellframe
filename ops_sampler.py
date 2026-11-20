@@ -1,5 +1,5 @@
 """What this computer is doing right now: CPU per core, memory, swap, memory pressure, network speed,
-whether there is a route out, free disk, and the five programs using the most (the office's ops TV).
+whether there is a route out, free disk, and the five programs using the most CPU or memory (the office's ops TV).
 
 Leaf module: stdlib, `wake_watch.memory_pressure` and nothing else. No `import main`, no network, no
 psutil, and no `top` (0.8 s of CPU per call). Read only: nothing here writes, and nothing reads a
@@ -9,7 +9,7 @@ Platforms
   macOS   CPU per core: `host_processor_info` through ctypes (two readings subtracted; the same call
           Activity Monitor uses, about 0.01 ms). Memory: `vm_stat` + `sysctl hw.memsize`. Swap:
           `sysctl vm.swapusage`. Pressure: `wake_watch.memory_pressure()`. Network: `netstat -ibn` twice (`-n` matters: without it netstat looks up host names when its output is a pipe, and waited 5 s).
-          Route: `route -n get default`. Top five: `ps -Ao pid,pcpu,rss,comm -r`.
+          Route: `route -n get default`. Top five: one `ps -Ao pid,pcpu,rss,comm -r`, ordered by CPU or by memory.
   Linux   /proc/stat, /proc/meminfo, /proc/pressure/memory, /proc/net/dev, /proc/net/route, `ps`.
   other   (Windows) `supported()` is False and the collector reports level "none".
 
@@ -135,9 +135,17 @@ def parse_route_get_default(text):
     return m.group(1) if m else ""
 
 
-def parse_ps(text, own=("ps",)) -> list:
+def sort_programs(rows, by="cpu") -> list:
+    """Programs biggest first: `by` "mem" is the summed rss (CPU breaks a tie), anything else CPU (rss breaks a tie)."""
+    if by == "mem":
+        return sorted(rows, key=lambda a: (-a["rss"], -a["cpu"]))
+    return sorted(rows, key=lambda a: (-a["cpu"], -a["rss"]))
+
+
+def parse_ps(text, own=("ps",), by="cpu") -> list:
     """`ps -Ao pid,pcpu,rss,comm` → [{"name", "cpu", "rss", "count"}] by program name (the basename
-    of `comm`, nothing else), several processes of one program added up, biggest CPU first."""
+    of `comm`, nothing else), several processes of one program added up, biggest first by `by`
+    ("cpu" or "mem": rss added up over the program's processes)."""
     agg = {}
     for line in (text or "").splitlines()[1:]:
         f = line.strip().split(None, 3)
@@ -153,7 +161,7 @@ def parse_ps(text, own=("ps",)) -> list:
         a["cpu"] += cpu
         a["rss"] += int(rss) * 1024
         a["count"] += 1
-    return sorted(agg.values(), key=lambda a: (-a["cpu"], -a["rss"]))
+    return sort_programs(agg.values(), by)
 
 
 def parse_proc_stat(text) -> list:
@@ -465,12 +473,22 @@ class Sampler:
                 pass
         return out
 
-    def top(self, n=5) -> list:
-        """The `n` programs using the most CPU: [{"name", "cpu", "rss", "count"}]. [] when it cannot be read."""
+    def _ps(self):
+        """Every program as parse_ps reads it, from one `ps` call (one call serves both orders)."""
         if self.kind == "mac":
             text = self._run(["ps", "-Ao", "pid,pcpu,rss,comm", "-r"], 3)
         elif self.kind == "linux":
             text = self._run(["ps", "-Ao", "pid,pcpu,rss,comm", "--sort=-pcpu"], 3)
         else:
             return []
-        return parse_ps(text)[:n]
+        return parse_ps(text)
+
+    def top(self, n=5, by="cpu") -> list:
+        """The `n` programs using the most CPU (`by` "mem": the most memory): [{"name", "cpu", "rss", "count"}].
+        [] when it cannot be read."""
+        return sort_programs(self._ps(), by)[:n]
+
+    def top_both(self, n=5) -> dict:
+        """{"cpu": [...], "mem": [...]}: the top `n` in each order, from a single `ps` call."""
+        rows = self._ps()
+        return {"cpu": sort_programs(rows, "cpu")[:n], "mem": sort_programs(rows, "mem")[:n]}

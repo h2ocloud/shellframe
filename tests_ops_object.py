@@ -88,9 +88,11 @@ class Fake:
         out.update(self.values)
         return out
 
-    def top(self, n=5):
+    def top_both(self, n=5):
         self.tops += 1
-        return [{"name": "Safari", "cpu": 12.0, "rss": 1 << 30, "count": 3}, {"name": "demo-tool", "cpu": 4.0, "rss": 200 << 20, "count": 1}]
+        a, b = {"name": "Safari", "cpu": 12.0, "rss": 1 << 30, "count": 3}, {"name": "demo-tool", "cpu": 4.0, "rss": 200 << 20, "count": 1}
+        big = {"name": "demo-agent", "cpu": 1.0, "rss": 6 << 30, "count": 23}
+        return {"cpu": [a, b, big], "mem": [big, a, b]}
 
 
 def make(keep=False, **kw):
@@ -138,7 +140,7 @@ check("with nothing wrong and the screen closed it is 300 s again", c2.interval(
 print("the top five is read only while the screen is live, every 10 s")
 c, clock, pushed, sent = make()
 c.step()
-check("not live: no top, and nothing kept", c.sampler.tops == 0 and c.top == [])
+check("not live: no top, and nothing kept", c.sampler.tops == 0 and not c.top)
 c.live(True, clock())
 c.step()
 n1 = c.sampler.tops
@@ -146,14 +148,14 @@ clock.t += 2
 c.step()
 clock.t += 2
 c.step()
-check("live: read once, not again for 10 s", n1 == 1 and c.sampler.tops == 1 and len(c.top) == 2)
+check("live: read once, not again for 10 s", n1 == 1 and c.sampler.tops == 1 and len(c.top["cpu"]) == 3 and len(c.top["mem"]) == 3)
 clock.t += 10
 c.step()
 check("and again after 10 s", c.sampler.tops == 2)
 c.live(False, clock())
 clock.t += 400
 c.step()
-check("closed: the list is dropped, not kept", c.top == [])
+check("closed: the list is dropped, not kept", not c.top)
 
 print("an alert event: one notification, and the page is told on a change")
 c, clock, pushed, sent = make()
@@ -280,6 +282,80 @@ check("unmute and reset are saved", json.loads(O.state_file().read_text())["mute
 check("an unknown action is refused", c8.act("explode", {}, "en")["ok"] is False)
 check("the mute message is in the page's language", "已靜音" in c8.act("mute", {"minutes": "x"}, "zh")["message"]
       and "Muted until" in c8.act("mute", {}, "en")["message"])
+
+print("the top five can be ordered by CPU or by memory (top_sort)")
+c, clock, *_ = make()
+check("default: auto", c.top_sort == "auto" and O.TOP_SORT_DEFAULT == "auto" and O.TOP_SORTS == ("auto", "cpu", "mem"))
+
+
+def top_table(coll, lang="en"):
+    sec = [x for x in coll.view(lang)["sections"] if x["id"] == "top"][0]
+    return sec, sec["widgets"][0]
+
+
+def live_view(coll, clk, **vals):
+    coll.sampler.values = vals
+    for _ in range(3):
+        coll.live(True, clk())
+        coll.step()
+        clk.t += 2
+
+
+live_view(c, clock)
+sec, tab = top_table(c)
+check("auto, nothing short: ranked by CPU, the switch says so", [r[0] for r in tab["rows"]] == ["Safari ×3", "demo-tool", "demo-agent ×23"]
+      and tab["switch"]["value"] == "auto" and tab["switch"]["note"] == "Now ranked by CPU" and sec["title"] == "Top 5 by CPU", tab)
+check("the switch: the action, three options", tab["switch"]["action"] == "top_sort"
+      and [o["id"] for o in tab["switch"]["options"]] == ["auto", "cpu", "mem"] and [o["label"] for o in tab["switch"]["options"]] == ["Auto", "CPU", "Memory"], tab["switch"])
+check("a memory-heavy program (23 processes, 6 GB) shows its summed memory", tab["rows"][2] == ["demo-agent ×23", "1%", "6.0 GB"], tab["rows"])
+check("auto: memory pressure not normal", O.Collector.top_order("auto", {"pressure": "warn"}) == ("mem", "pressure")
+      and O.Collector.top_order("auto", {"pressure": "critical"}) == ("mem", "pressure"))
+check("auto: memory used at 80% or more (79.9 is not)", O.Collector.top_order("auto", {"mem_pct": 80.0}) == ("mem", "mem")
+      and O.Collector.top_order("auto", {"mem_pct": 79.9}) == ("cpu", ""))
+check("auto: swap at 4 GB or more (just under is not)", O.Collector.top_order("auto", {"swap_used": 4 << 30}) == ("mem", "swap")
+      and O.Collector.top_order("auto", {"swap_used": (4 << 30) - 1}) == ("cpu", ""))
+check("auto with nothing known is CPU; a fixed choice ignores the readings", O.Collector.top_order("auto", {}) == ("cpu", "")
+      and O.Collector.top_order("cpu", {"pressure": "critical"}) == ("cpu", "") and O.Collector.top_order("mem", {}) == ("mem", ""))
+live_view(c, clock, mem_pct=81.0)
+sec, tab = top_table(c)
+check("auto, memory 81%: ranked by memory, the note says why", [r[0] for r in tab["rows"]] == ["demo-agent ×23", "Safari ×3", "demo-tool"]
+      and tab["switch"]["note"] == "Now ranked by memory (memory 81% used)" and sec["title"] == "Top 5 by memory", tab["switch"])
+live_view(c, clock, pressure="warn")
+check("auto, pressure warn: memory, the note names the pressure", "memory pressure is up" in top_table(c)[1]["switch"]["note"])
+live_view(c, clock, swap_used=5 << 30)
+check("auto, swap 5 GB: memory, the note names the swap", top_table(c)[1]["switch"]["note"] == "Now ranked by memory (swap 5.0 GB)")
+live_view(c, clock)
+r = c.act("top_sort", {"by": "mem"}, "en")
+check("top_sort mem: ok, refresh, ranked by memory with nothing short, no note", r["ok"] and r["refresh"] and c.top_sort == "mem"
+      and top_table(c)[1]["rows"][0][0] == "demo-agent ×23" and top_table(c)[1]["switch"]["value"] == "mem" and top_table(c)[1]["switch"]["note"] == "")
+check("top_sort cpu: back to CPU", c.act("top_sort", {"by": "cpu"}, "en")["ok"] and top_table(c)[1]["rows"][0][0] == "Safari ×3")
+check("an unknown order or no args is refused and changes nothing", c.act("top_sort", {"by": "disk"}, "en")["ok"] is False
+      and c.act("top_sort", {}, "en")["ok"] is False and c.act("top_sort", None, "en")["ok"] is False and c.top_sort == "cpu")
+check("the Chinese words", "沒有這種排序" in c.act("top_sort", {"by": "x"}, "zh")["message"] and "已存" in c.act("top_sort", {"by": "auto"}, "zh")["message"])
+vz = top_table(c, "zh")
+check("Chinese: labels, note and title", [o["label"] for o in vz[1]["switch"]["options"]] == ["自動", "CPU", "記憶體"]
+      and vz[0]["title"] == "吃資源前 5 名・照 CPU" and vz[1]["switch"]["note"] == "現在照 CPU 排", vz)
+c.act("top_sort", {"by": "mem"}, "en")
+check("saved in ops.json next to the rules and the mute", json.loads(O.state_file().read_text())["top_sort"] == "mem"
+      and "rules" in json.loads(O.state_file().read_text()))
+c9, *_ = make(keep=True)
+check("a new collector reads it back", c9.top_sort == "mem")
+O.state_file().write_text(json.dumps({"v": 1, "top_sort": "bogus"}))
+check("an unknown saved value is ignored", make(keep=True)[0].top_sort == "auto")
+c.act("mute", {"minutes": 5}, "en")
+c.act("reset_rules", {}, "en")
+check("muting and resetting the rules keep the order", json.loads(O.state_file().read_text())["top_sort"] == "mem")
+pre = {"id": "top", "widgets": [{"kind": "table", "columns": ["a"], "rows": [["x"]], "switch": {
+    "action": "top_sort", "value": "zzz", "note": "n " * 100, "options": [{"id": "auto", "label": "A"}, {"id": "Bad Id", "label": "x"}, {"id": "cpu", "label": "C"}]}}]}
+w = oo.clean_view({"sections": [pre]})["sections"][0]["widgets"][0]
+check("clean_view keeps the switch: an unknown value falls back to the first option, a bad option id is dropped, the note is cut",
+      w["switch"]["value"] == "auto" and [o["id"] for o in w["switch"]["options"]] == ["auto", "cpu"] and len(w["switch"]["note"]) <= 120
+      and w["switch"]["action"] == "top_sort", w)
+for bad in (None, "x", {"action": "Not Ok", "options": [{"id": "a"}, {"id": "b"}]}, {"action": "go", "options": [{"id": "a"}]}, {"action": "go"}):
+    pre["widgets"][0]["switch"] = bad
+    check(f"clean_view drops a switch that is not usable ({str(bad)[:30]})", "switch" not in oo.clean_view({"sections": [pre]})["sections"][0]["widgets"][0])
+pre["widgets"][0].pop("switch")
+check("a table without a switch has none", "switch" not in oo.clean_view({"sections": [pre]})["sections"][0]["widgets"][0])
 
 print("summary and what the host keeps of it")
 c, clock, *_ = make()
@@ -414,7 +490,7 @@ print("the object in the office")
 check("declared: id ops, furniture tv (a known kind), the lobby wall", oo.normalize_declaration(O.DECLARATION, "en")["furniture"] == "tv"
       and oo.normalize_declaration(O.DECLARATION, "en")["place"] == "lobby:wall" and "tv" in oo.FURNITURE)
 decl = oo.normalize_declaration(O.DECLARATION, "zh")
-check("title Ops / 維運, the four actions", decl["title"] == "維運" and [a["id"] for a in decl["actions"]] == ["mute", "unmute", "set_rule", "reset_rules"])
+check("title Ops / 維運, the five actions", decl["title"] == "維運" and [a["id"] for a in decl["actions"]] == ["mute", "unmute", "set_rule", "reset_rules", "top_sort"])
 check("a built-in list has it, and its registry hides it while the switch is off", any(isinstance(o, O.Ops) for o in aoo.builtin_objects()))
 O._enabled = False
 reg = oo.Registry([O.Ops()], lambda: [])

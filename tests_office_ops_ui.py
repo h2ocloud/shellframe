@@ -91,7 +91,13 @@ def decl(level="ok", reason="", lang="zh", **over):
     return d
 
 
-def view(level="alert", lang="zh", rule_value=10, extra=None):
+def top_switch(lang="zh", value="auto", note=None):
+    T = (lambda en, zh: zh) if lang == "zh" else (lambda en, zh: en)
+    return {"action": "top_sort", "value": value, "options": [{"id": "auto", "label": T("Auto", "自動")}, {"id": "cpu", "label": "CPU"}, {"id": "mem", "label": T("Memory", "記憶體")}],
+            "note": T("Now ranked by memory (memory 81% used)", "現在照記憶體排（記憶體已用 81%）") if note is None else note}
+
+
+def view(level="alert", lang="zh", rule_value=10, extra=None, sort="auto"):
     T = (lambda en, zh: zh) if lang == "zh" else (lambda en, zh: en)
     cells = ["ok"] * 50 + ["warn"] * 4 + ["alert"] * 5 + ["none"]
     v = {"success": True, "refresh_ms": 600, "title": T("Ops board", "維運戰情"),
@@ -110,7 +116,8 @@ def view(level="alert", lang="zh", rule_value=10, extra=None):
                  {"kind": "spark", "label": T("Down / up", "下載／上傳"), "unit": "MB/s", "series": [{"label": T("Down", "下載"), "values": [1.0, 1.2, 0.8], "tone": "info"}, {"label": T("Up", "上傳"), "values": [0.2, 0.3, 0.1], "tone": "dim"}]},
                  {"kind": "stat", "label": T("Disk free", "磁碟剩餘"), "value": "42%", "sub": "210 GB", "tone": "ok"}]},
              {"id": "top", "title": T("Top 5 by use", "吃資源前 5 名"), "widgets": [
-                 {"kind": "table", "columns": [T("Program", "程式"), "CPU", T("Memory", "記憶體")], "rows": [["示範瀏覽器" if lang == "zh" else "Demo browser", "12%", "1.1 GB"], ["示範編輯器" if lang == "zh" else "Demo editor", "7%", "0.9 GB"]]}]},
+                 {"kind": "table", "columns": [T("Program", "程式"), "CPU", T("Memory", "記憶體")], "rows": [["示範瀏覽器" if lang == "zh" else "Demo browser", "12%", "1.1 GB"], ["示範編輯器" if lang == "zh" else "Demo editor", "7%", "0.9 GB"]],
+                  "switch": top_switch(lang, sort)}]},
              {"id": "day", "title": T("Last 24 hours", "最近 24 小時"), "widgets": [
                  {"kind": "strip", "label": T("Memory pressure (every 5 minutes)", "記憶體壓力（每 5 分鐘）"), "start": NOW - 86400, "step_s": 300, "cells": ["ok"] * 280 + ["warn"] * 4 + ["alert"] * 4}]},
              {"id": "rules", "title": T("What counts as wrong", "什麼算異常"), "widgets": [
@@ -449,6 +456,54 @@ def run(browser, base, engine):
     page.wait_for_timeout(500)
     check("調整規則 goes to the rules and puts the focus on one", fr.evaluate("!!document.activeElement && document.activeElement.closest('.op-sec') && document.activeElement.closest('.op-sec').dataset.sec") == "rules")
 
+    # the top five's order switch
+    print(f"[{engine}] the top five's order switch")
+    page.evaluate("(v) => { window.__fake.view.zh = v; }", view("alert", "zh"))
+    page.wait_for_timeout(900)
+    sw = fr.evaluate("""() => { const b = [...document.querySelectorAll('.op-w-table [data-op="switch"]')];
+      return { labels: b.map(x => x.textContent), on: b.map(x => x.classList.contains('on')), pressed: b.map(x => x.getAttribute('aria-pressed')), note: (document.querySelector('.op-snote') || {}).textContent || '',
+               tag: b.map(x => x.tagName), data: b.map(x => [x.dataset.act, x.dataset.val]) }; }""")
+    check("the table's header draws a switch: 自動 / CPU / 記憶體 as buttons, auto is the one on", sw["labels"] == ["自動", "CPU", "記憶體"] and sw["on"] == [True, False, False]
+          and sw["pressed"] == ["true", "false", "false"] and set(sw["tag"]) == {"BUTTON"}, sw)
+    check("the small note beside it says why", sw["note"] == "現在照記憶體排（記憶體已用 81%）", sw["note"])
+    n_acts = len(fake(page)["acts"])
+    fr.focus('.op-w-table [data-op="switch"][data-val="mem"]')       # by keyboard: Safari does not focus a button on a mouse click
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(300)
+    a = fake(page)["acts"][n_acts:]
+    check("a press sends top_sort {by: 'mem'} through office_object_action(id, '', 'top_sort', json, lang)",
+          len(a) == 1 and a[0][:3] == ["ops", "", "top_sort"] and json.loads(a[0][3]) == {"by": "mem"} and a[0][4] in ("zh", "zh-TW"), a)
+    nv = len(fake(page)["views"])
+    serve(view("alert", "zh", sort="mem"))
+    page.wait_for_timeout(1200)
+    check("…then it reads the view again and the pressed button follows the backend (記憶體 on, note gone is the backend's call)",
+          len(fake(page)["views"]) > nv and fr.evaluate("[...document.querySelectorAll('.op-w-table [data-op=\"switch\"]')].map(x => x.classList.contains('on'))") == [False, False, True])
+    check("…and the keyboard focus stays on the button used", fr.evaluate("!!document.activeElement && document.activeElement.dataset.val") == "mem")
+    fr.click('.op-w-table [data-op="switch"][data-val="cpu"]')
+    page.wait_for_timeout(300)
+    check("another button sends its own value", json.loads(fake(page)["acts"][-1][3]) == {"by": "cpu"}, fake(page)["acts"][-1])
+    if shoot:
+        fr.evaluate("document.querySelector('.op-sec[data-sec=\"top\"]').scrollIntoView({block: 'center'})")
+        page.wait_for_timeout(300)
+        page.locator("#sfo-overlay").screenshot(path=str(SHOTS / "office-ops-top-switch-1280.png"))
+    serve(view("alert", "zh"))
+    page.wait_for_timeout(900)
+    # a table with no switch (an older backend) draws no buttons
+    def noswitch(v):
+        v["sections"][3]["widgets"][0].pop("switch")
+    serve(view("alert", "zh", extra=noswitch))
+    page.wait_for_timeout(1100)
+    check("a table without a `switch` draws none (and keeps its rows)", fr.evaluate("document.querySelectorAll('.op-w-table [data-op=\"switch\"]').length") == 0
+          and "示範瀏覽器" in win(fr)["text"] and not page.errors, page.errors)
+    def badswitch(v):
+        v["sections"][3]["widgets"][0]["switch"] = {"action": "top_sort", "options": [{"id": "only", "label": "x"}]}
+    serve(view("alert", "zh", extra=badswitch))
+    page.wait_for_timeout(1100)
+    check("a switch with fewer than two options draws none and does not break the table", fr.evaluate("document.querySelectorAll('.op-w-table [data-op=\"switch\"]').length") == 0
+          and "示範瀏覽器" in win(fr)["text"] and not page.errors, page.errors)
+    serve(view("alert", "zh"))
+    page.wait_for_timeout(900)
+
     # robustness: a kind it does not know, widgets with missing fields
     print(f"[{engine}] an unknown kind and missing fields")
     def junk(v):
@@ -619,6 +674,14 @@ def run(browser, base, engine):
     w = win(fr)
     check("the window has no Chinese in it (title, banner, buttons, widgets, rules, footer)", not CJK.search(w["text"]), CJK.findall(w["text"])[:10])
     check("…and says its things in English", "Mute for 1 hour" in w["text"] and "Adjust rules" in w["text"] and "Back to the defaults" in w["text"] and "Live" in w["text"], w["text"][:300])
+    sw = fr.evaluate("[...document.querySelectorAll('.op-w-table [data-op=\"switch\"]')].map(x => x.textContent)")
+    check("the switch is in English: Auto / CPU / Memory, with the English note", sw == ["Auto", "CPU", "Memory"] and "Now ranked by memory (memory 81% used)" in w["text"]
+          and fr.evaluate("document.querySelector('.op-seg').getAttribute('aria-label')") == "Order", sw)
+    n_acts = len(fake(page)["acts"])
+    fr.click('.op-w-table [data-op="switch"][data-val="mem"]')
+    page.wait_for_timeout(300)
+    a = fake(page)["acts"][n_acts:]
+    check("English: the same args, language en", len(a) == 1 and a[0][2] == "top_sort" and json.loads(a[0][3]) == {"by": "mem"} and a[0][4] == "en", a)
     F = fake(page)
     check("it asked for the English view", F["views"] and F["views"][0][-1] == "en", F["views"][:1])
     page.keyboard.press("Escape")

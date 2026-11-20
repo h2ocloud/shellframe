@@ -222,10 +222,16 @@
       `<div class="op-strip" style="grid-template-columns:repeat(${Math.max(1, cells.length)},minmax(0,1fr))" role="img" aria-label="${esc(w.label || '')}">${cells.map((c, i) => { const k = CELLS.has(c) ? c : 'none'; return `<i class="c-${k}" title="${esc(t(i))} ${esc(word(k))}"></i>`; }).join('')}</div>` +
       (start != null && cells.length ? `<div class="op-axis"><span>${esc(t(0))}</span><span>${esc(T('Now', '現在'))}</span></div>` : '');
   }
-  function wTable(w) {
+  function wSwitch(sw, T) {
+    const opts = arr(sw.options).filter(o => o && typeof o.id === 'string'), act = String(sw.action || ''), cur = String(sw.value == null ? '' : sw.value);
+    if (!act || opts.length < 2) return '';
+    return `<div class="op-switch"><span class="op-seg" role="group" aria-label="${esc(T('Order', '排序'))}">${opts.map(o => `<button type="button" class="op-segb${String(o.id) === cur ? ' on' : ''}" data-op="switch" data-act="${esc(act)}" data-val="${esc(o.id)}" aria-pressed="${String(o.id) === cur}">${esc(o.label || o.id)}</button>`).join('')}</span>` +
+      (sw.note ? `<span class="op-snote">${esc(sw.note)}</span>` : '') + '</div>';
+  }
+  function wTable(w, T) {
     const cols = arr(w.columns), rows = arr(w.rows).slice(0, 30);
     const cell = (c, j) => { const s = String(c == null ? '' : c), m = j > 0 && /^\s*(\d+(?:\.\d+)?)\s*%\s*$/.exec(s); return m ? `<td><span class="op-pc"><i style="width:${clamp(+m[1], 0, 100)}%"></i></span>${esc(s)}</td>` : `<td>${esc(s)}</td>`; };
-    return `<table class="op-table"><thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${arr(r).map(cell).join('')}</tr>`).join('')}</tbody></table>`;
+    return (w.switch && typeof w.switch === 'object' ? wSwitch(w.switch, T || ((en) => en)) : '') + `<table class="op-table"><thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${arr(r).map(cell).join('')}</tr>`).join('')}</tbody></table>`;
   }
   const wStat = w => `<div class="op-stat op-t-${toneOf(w.tone)}">${w.label ? `<span class="op-cap">${esc(w.label)}</span>` : ''}<b>${esc(w.value)}</b>${w.sub ? `<em>${esc(w.sub)}</em>` : ''}</div>`;
   function wRules(w, T) {
@@ -405,8 +411,10 @@
         const here = focus && el.contains(focus) ? focus : null;
         if (here && !force && here.tagName === 'INPUT' && here.value !== here.defaultValue) return;     // a number typed and not sent yet: left alone
         const keep = here && here.closest('.op-rule') ? [here.closest('.op-rule').dataset.rule, here.dataset.op] : null;
+        const keepSeg = here && here.dataset.op === 'switch' ? here.dataset.val : null;
         S.sigs[i] = sig; el.innerHTML = s.html; el.parentNode.querySelector('h3').textContent = s.title;
-        if (keep) { const again = [...el.querySelectorAll('.op-rule')].find(r => r.dataset.rule === keep[0]); const c = again && again.querySelector(`[data-op="${keep[1]}"]`); if (c) try { c.focus({ preventScroll: true }); } catch (_) {} }   // the control the person used keeps the focus
+        if (keep) { const again = [...el.querySelectorAll('.op-rule')].find(r => r.dataset.rule === keep[0]); const c = again && again.querySelector(`[data-op="${keep[1]}"]`); if (c) try { c.focus({ preventScroll: true }); } catch (_) {} }
+        if (keepSeg != null) { const c = [...el.querySelectorAll('[data-op="switch"]')].find(x => x.dataset.val === keepSeg); if (c) try { c.focus({ preventScroll: true }); } catch (_) {} }   // the control the person used keeps the focus
       });
       $('#opBody').scrollTop = top;
     }
@@ -450,6 +458,8 @@
       else if (op === 'rules') {
         const sec = veil.querySelector('.op-sec[data-sec="rules"]') || veil.querySelector('.op-rule');
         if (sec) { sec.scrollIntoView({ block: 'center', behavior: 'smooth' }); sec.classList.remove('flash'); void sec.offsetWidth; sec.classList.add('flash'); const i = sec.querySelector('.op-sw, .op-num'); if (i) try { i.focus({ preventScroll: true }); } catch (_) {} }
+      } else if (op === 'switch') {
+        if (b.dataset.act && b.dataset.val) act(b.dataset.act, { by: b.dataset.val });
       } else if (op === 'rule-on') {
         const row = ruleRow(b); b.classList.toggle('on'); b.setAttribute('aria-checked', String(b.classList.contains('on'))); row.classList.toggle('off', !b.classList.contains('on'));
         sendRule(row);
@@ -486,7 +496,7 @@
           { kind: 'stat', label: T_('Swap', '交換區'), value: '3.2 GB', sub: T_('+1.1 GB in 30 minutes', '30 分鐘 +1.1 GB'), tone: 'warn' }] },
         { id: 'net', title: T_('Network and disk', '網路與磁碟'), widgets: [{ kind: 'spark', label: T_('Down / up', '下載／上傳'), unit: 'MB/s', series: [{ label: T_('Down', '下載'), values: [0.8, 1.2, 1.9, 1.1, 1.4], tone: 'info' }, { label: T_('Up', '上傳'), values: [0.2, 0.3, 0.2, 0.4, 0.3], tone: 'dim' }] },
           { kind: 'stat', label: T_('Disk free', '磁碟剩餘'), value: '38%', sub: '182 GB', tone: 'ok' }] },
-        { id: 'top', title: T_('Top 5 by use', '吃資源前 5 名'), widgets: [{ kind: 'table', columns: [T_('Program', '程式'), 'CPU', T_('Memory', '記憶體')], rows: [['示範瀏覽器', '24%', '3.1 GB'], ['示範建置程序', '19%', '2.4 GB'], ['示範編輯器', '7%', '1.9 GB']] }] },
+        { id: 'top', title: T_('Top 5 by use', '吃資源前 5 名'), widgets: [{ kind: 'table', columns: [T_('Program', '程式'), 'CPU', T_('Memory', '記憶體')], switch: { action: 'top_sort', value: 'auto', options: [{ id: 'auto', label: T_('Auto', '自動') }, { id: 'cpu', label: 'CPU' }, { id: 'mem', label: T_('Memory', '記憶體') }], note: T_('Now ranked by CPU', '現在照 CPU 排') }, rows: [['示範瀏覽器', '24%', '3.1 GB'], ['示範建置程序', '19%', '2.4 GB'], ['示範編輯器', '7%', '1.9 GB']] }] },
         { id: 'day', title: T_('Last 24 hours', '最近 24 小時'), widgets: [{ kind: 'strip', label: T_('Memory pressure (every 5 minutes)', '記憶體壓力（每 5 分鐘）'), start: t0 - 86400, step_s: 300, cells: cells(288, lv === 'ok' ? 0 : 3) }] },
         { id: 'rules', title: T_('What counts as wrong', '什麼算異常'), widgets: [{ kind: 'rules', items: [
           { id: 'mem_pressure_high', label: T_('Memory pressure "high" for', '記憶體壓力「高」連續'), on: true, value: 10, unit: T_('min', '分鐘'), level: 'alert', min: 1, max: 120, step: 1 },

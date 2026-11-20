@@ -77,6 +77,31 @@ check("ps: the basename only, several processes of one program added up, ps itse
       [t["name"] for t in top] == ["Google Chrome Helper (Renderer)", "mds_stores"] and top[0]["count"] == 2
       and round(top[0]["cpu"]) == 100 and top[0]["rss"] == (434064 + 100000) * 1024, top)
 check("no path and no argument in a name", all("/" not in t["name"] for t in top))
+PS2 = """  PID  %CPU    RSS COMM
+ 1  3.0  1048576 /usr/bin/demo-agent
+ 2  2.0  1048576 /usr/bin/demo-agent
+ 3  1.0  1048576 /usr/bin/demo-agent
+ 4 40.0   204800 /usr/bin/demo-busy
+ 5  9.0  2097152 /usr/bin/demo-editor
+ 6  0.0   102400 /usr/bin/demo-idle
+"""
+by_cpu, by_mem = S.parse_ps(PS2), S.parse_ps(PS2, by="mem")
+check("ps by CPU: the busy one first", [t["name"] for t in by_cpu] == ["demo-busy", "demo-editor", "demo-agent", "demo-idle"], by_cpu)
+check("ps by memory: the processes of one program are added up (3 x 1 GB beats one 2 GB)",
+      [t["name"] for t in by_mem] == ["demo-agent", "demo-editor", "demo-busy", "demo-idle"] and by_mem[0]["rss"] == 3 * 1048576 * 1024
+      and by_mem[0]["count"] == 3, by_mem)
+check("a tie in memory is broken by CPU, a tie in CPU by memory",
+      [t["name"] for t in S.sort_programs([{"name": "a", "cpu": 1, "rss": 5, "count": 1}, {"name": "b", "cpu": 2, "rss": 5, "count": 1}], "mem")] == ["b", "a"]
+      and [t["name"] for t in S.sort_programs([{"name": "a", "cpu": 1, "rss": 5, "count": 1}, {"name": "b", "cpu": 1, "rss": 9, "count": 1}])] == ["b", "a"])
+ps_calls = []
+sm = S.Sampler(kind="mac", runner=lambda cmd, timeout=3: (ps_calls.append(cmd), PS2)[1])
+both = sm.top_both(2)
+check("top_both: one ps call gives both orders, five (here two) each",
+      len(ps_calls) == 1 and ps_calls[0][0] == "ps" and [t["name"] for t in both["cpu"]] == ["demo-busy", "demo-editor"]
+      and [t["name"] for t in both["mem"]] == ["demo-agent", "demo-editor"], (ps_calls, both))
+check("top(n, by=...) follows the same order", [t["name"] for t in sm.top(1)] == ["demo-busy"] and [t["name"] for t in sm.top(1, "mem")] == ["demo-agent"])
+check("top_both where nothing can be read", S.Sampler(kind="none").top_both() == {"cpu": [], "mem": []}
+      and S.Sampler(kind="mac", runner=lambda *a, **k: None).top_both() == {"cpu": [], "mem": []})
 STAT = "cpu  1 2 3 4\ncpu0 100 0 50 800 50 0 0 0\ncpu1 10 0 10 900 80 0 0 0\nintr 1\n"
 ticks = S.parse_proc_stat(STAT)
 check("/proc/stat: per core, idle = idle + iowait", ticks == [(150, 0, 850, 0), (20, 0, 980, 0)], ticks)

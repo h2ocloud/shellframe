@@ -2934,14 +2934,41 @@ function pill(x, y, text, o) {
   return w;
 }
 function miniAvatar(who, x, y, r) { c.save(); c.translate(x, y); if (who.shape) { shapePath(c, who.shape, r); c.fillStyle = who.color; c.fill(); } else { c.beginPath(); c.arc(0, 0, r, 0, 6.2832); c.fillStyle = '#6b7399'; c.fill(); } c.restore(); }
-function roomSign(r, far, placed) {
+// A room's name plate: where it is, how big, which colour (screen px). The lobby's plate hangs over the back wall at 74% of its width; while the
+// ops TV is on that wall the plate is moved so that it overlaps no wall piece (the TV, the board, the calendar, the cabinet): first to the left in
+// steps of 4% of the width, then up. tests_office_furniture_ui.py checks the plate's rectangle against the TV's quad in 3D and in the flat view.
+function signGeom(r, plain) {
   const iso = V.m >= .5, k = clamp(cam.z * 1.05, .8, 1.1), front = r.kind !== 'lobby';
-  let p = front ? (iso ? t2s(r.x + r.w * .3, r.y + r.h, 0) : V.tp ? t2s(r.x + r.w, r.y + r.h / 2, 0) : t2s(r.x + r.w * .5, r.y + r.h, 0)) : (iso || !V.tp) ? t2s(r.x + r.w * (r.kind === 'lobby' ? .74 : .5), r.y - .1, r.wallH + 24) : t2s(r.x - .1, r.y + r.h / 2, r.wallH + 24);
-  if (front) p = { x: p.x, y: p.y + (iso ? 17 : 15) * k };
   const main = r.label, used = r.kind === 'zone' ? [...M.seats.values()].filter(s => s.room === r.id && s.occ && !s.occ.gone).length : 0;
   const sub = r.kind === 'zone' ? `${used}/${ZCAP}` : r.kind === 'peer' ? '配對' + (r.primary ? ' · 主要：' + r.primary : '') : '秘書長 · 實習生';
   const col = r.kind === 'zone' ? teamCol(r.team) : r.kind === 'peer' ? COL.teal : COL.purple;
-  const f1 = `700 ${Math.round(12.5 * k)}px ${FONT}`, f2 = `500 ${Math.round(10.5 * k)}px ${FONT}`, w1 = tw(f1, main), w2 = tw(f2, sub), w = w1 + w2 + 34 * k, h = 25 * k, x0 = p.x - w / 2;
+  const f1 = `700 ${Math.round(12.5 * k)}px ${FONT}`, f2 = `500 ${Math.round(10.5 * k)}px ${FONT}`, w1 = tw(f1, main), w2 = tw(f2, sub), w = w1 + w2 + 34 * k, h = 25 * k;
+  let p = front ? (iso ? t2s(r.x + r.w * .3, r.y + r.h, 0) : V.tp ? t2s(r.x + r.w, r.y + r.h / 2, 0) : t2s(r.x + r.w * .5, r.y + r.h, 0)) : (iso || !V.tp) ? t2s(r.x + r.w * (r.kind === 'lobby' ? .74 : .5), r.y - .1, r.wallH + 24) : t2s(r.x - .1, r.y + r.h / 2, r.wallH + 24);
+  if (front) p = { x: p.x, y: p.y + (iso ? 17 : 15) * k };
+  else if (!plain && r.kind === 'lobby' && (iso || !V.tp) && wallObj('tv')) {
+    const hulls = wallKeys().filter(key => wallRoom(key) === 'lobby' && wallObj(key)).map(key => wallScreen(key));
+    const hits = q => hulls.some(pts => rectHitsPoly(q.x - w / 2, q.y - h / 2, w, h, pts));
+    for (let up = 0; up <= 3; up++) for (let f = .74; f >= .3; f -= .04) {
+      const q = t2s(r.x + r.w * f, r.y - .1, r.wallH + 24 + up * 14 * k);
+      if (!hits(q)) { p = q; up = 9; break; }
+    }
+  }
+  return { p, k, main, sub, col, f1, f2, w1, w, h, x0: p.x - w / 2 };
+}
+// a rectangle and a convex polygon (screen px) overlap: separating axis over the two box axes and the polygon's edges
+function rectHitsPoly(x, y, w, h, pts) {
+  const rect = [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
+  for (const poly of [rect, pts]) for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length], nx = -(b.y - a.y), ny = b.x - a.x;
+    if (!nx && !ny) continue;
+    const pr = ps => ps.map(q => nx * q.x + ny * q.y);
+    const A = pr(rect), B = pr(pts);
+    if (Math.min(Math.max(...A), Math.max(...B)) - Math.max(Math.min(...A), Math.min(...B)) <= 0) return false;
+  }
+  return true;
+}
+function roomSign(r, far, placed) {
+  const g = signGeom(r), { p, k, main, sub, col, f1, f2, w1, w, h, x0 } = g;
   if (p.x + w / 2 < 0 || p.x - w / 2 > W || p.y < -30 || p.y > H + 30) return; if (placed) placed.push({ x: x0, y: p.y - h / 2, w, h });
   c.globalAlpha = r.alpha; c.beginPath(); c.roundRect(x0, p.y - h / 2, w, h, 8 * k); c.fillStyle = 'rgba(24,27,40,.94)'; c.fill(); c.strokeStyle = alpha(col, .55); c.lineWidth = 1; c.stroke();
   ellipse(c, x0 + 12 * k, p.y, 3.6 * k, 3.6 * k, col);
@@ -3602,6 +3629,8 @@ window.__office = {
   camTo: key => { const e = M.ents.get(key), p = e && deskTopOf(e); if (!p) return false; const q = P(p.x, p.y, p.z); goal = null; followCam = false; Object.assign(cam, { x: q.x, y: q.y, z: 1.5 }); kick(); return true; },
   pileAt: key => { const p = PILES.get(key); return p ? { x: p.x, y: p.y, r: p.r } : null; }, piles: () => [...PILES.keys()], pileTip: () => (hoverPile ? pileName(hoverPile) : ''),
   proj: (x, y, z) => t2s(x, y, z), ops: () => OPS, opsSet: o => { OPS.setObject(o); kick(); }, opsTv: () => (wallObj('tv') ? wallScreen('tv') : null),
+  wallQuads: () => Object.fromEntries(wallKeys().filter(key => wallRoom(key) === 'lobby' && wallObj(key)).map(key => [key, wallScreen(key)])),
+  signRect: (id, plain) => { const r = M.rooms.get(id); if (!r) return null; const g = signGeom(r, plain); return { x: g.x0, y: g.p.y - g.h / 2, w: g.w, h: g.h }; },
   objects: () => OBJ.state(), objOpen: (id, o) => OBJ.open(id, o), objClose: () => OBJ.close(),
   objPoint: id => { const h = OBJ.hull('obj:' + id, t2s); if (!h.length) return null; return { x: h.reduce((a, p) => a + p.x, 0) / h.length, y: h.reduce((a, p) => a + p.y, 0) / h.length }; },
   wallAt: (sx, sy) => wallObjAt(sx, sy), hoverTip: () => (hoverObj && wallObj(hoverObj) ? wallObj(hoverObj).name : ''), viewScope: () => vscope,
