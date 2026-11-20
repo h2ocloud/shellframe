@@ -256,8 +256,9 @@ with sync_playwright() as pw:
                 tvq = [(p["x"], p["y"]) for p in page.evaluate("__office.opsTv()")]
                 rect_of = lambda g: [(g["x"], g["y"]), (g["x"] + g["w"], g["y"]), (g["x"] + g["w"], g["y"] + g["h"]), (g["x"], g["y"] + g["h"])]
                 still = page.evaluate("__office.signRect('lobby', true)")
-                check("3D: where the plate used to hang it would overlap the TV (so the check above has teeth), and now it has moved",
-                      convex_overlap(rect_of(still), tvq) > 0 and abs(sg1["x"] - sg0["x"]) + abs(sg1["y"] - sg0["y"]) > 1, (sg0, sg1, still))
+                moved = abs(sg1["x"] - sg0["x"]) + abs(sg1["y"] - sg0["y"]) > 1
+                check("3D: the plate moves exactly when its old place would overlap the TV (the lobby's plate now says only 「大廳」, so at 1280 it may no longer reach the TV: then it stays; the labels test forces the overlap)",
+                      (convex_overlap(rect_of(still), tvq) > 0) == moved, (sg0, sg1, still))
                 page.evaluate("__office.opsSet(null)")
                 page.wait_for_timeout(300)
                 check("the plate moves only while the TV is on the wall: with no TV it is back where it was",
