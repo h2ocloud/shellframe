@@ -17,7 +17,7 @@ summary fields, office_object_view, office_object_live, office_object_action, op
   - English: the window, the button, the tooltip and every string drawn on the TV have no Chinese in them
   - the sidebar's 辦公室 button gets a red dot for `alert` only (not muted, ok, warn, none), from window.__sfOpsLevel and from
     ops_state() at load, and the entry row's width does not move; Settings -> Office has the switch and it writes experimental_ops
-Headless Chromium and WebKit when playwright has it. Screenshots (Chromium, zh-TW): qa-shots/office-ops-*.png.
+Headless Chromium and WebKit when playwright has it. Screenshots (Chromium, zh-TW): qa-shots/office-ops-*.png (the TV up close: office-ops-tv-{ok,alert}-{iso,flat}-zoom.png).
 Run: .venv/bin/python tests_office_ops_ui.py
 """
 import json
@@ -272,6 +272,31 @@ def run(browser, base, engine):
     check("no page errors so far", not page.errors, page.errors)
     page.context.close()
 
+    # ───────────────────────── 2b. the TV up close ─────────────────────────
+    if shoot:
+        print(f"[{engine}] the TV up close (screenshots)")
+        page = office_page(browser, base, level="ok")
+        fr = open_lobby(page)
+        for mode in ("iso", "flat"):
+            fr.evaluate(f"__office.setMode('{mode}', true); __office.setArea('lobby', true)")
+            page.wait_for_timeout(600)
+            set_objects(page, [BOOKSHELF, PERSONNEL, decl("ok")], "ok")
+            pts = fr.evaluate("__office.opsTv()")
+            page.mouse.move(sum(p["x"] for p in pts) / 4, sum(p["y"] for p in pts) / 4)
+            for _ in range(14):
+                page.mouse.wheel(0, -120)
+                page.wait_for_timeout(50)
+            page.wait_for_timeout(600)
+            for lv, reason in (("ok", ""), ("alert", "記憶體壓力高 12 分鐘")):
+                set_objects(page, [BOOKSHELF, PERSONNEL, decl(lv, reason)], lv)
+                pts = fr.evaluate("__office.opsTv()")
+                xs, ys = [p["x"] for p in pts], [p["y"] for p in pts]
+                page.mouse.move(5, 400)
+                page.wait_for_timeout(200)
+                page.screenshot(path=str(SHOTS / f"office-ops-tv-{lv}-{mode}-zoom.png"),
+                                clip={"x": max(0, min(xs) - 70), "y": max(0, min(ys) - 70), "width": max(xs) - min(xs) + 140, "height": max(ys) - min(ys) + 140})
+        page.context.close()
+
     # ───────────────────────── 3. motion ─────────────────────────
     print(f"[{engine}] alert: the glow pulses, 'reduce motion' holds it still, the idle rate stays 5 fps")
     rng = {}
@@ -287,12 +312,13 @@ def run(browser, base, engine):
         rng[reduced] = max(avgs) - min(avgs)
         if reduced:
             check("reduce motion: the banner's red does not move", rng[True] < 0.6, rng)
+        else:
             fr.evaluate("__office.forceIdle()")
             page.wait_for_timeout(300)
             f0 = fr.evaluate("__office.frames()")
             page.wait_for_timeout(2000)
             f1 = fr.evaluate("__office.frames()")
-            check("idle with an alert up: the office still draws at about 5 fps (not 20)", fr.evaluate("__office.isActive()") is False and 5 <= f1 - f0 <= 14, (f1 - f0, fr.evaluate("__office.isActive()")))
+            check("idle with a pulsing alert up: the office still draws at about 5 fps (not 20)", fr.evaluate("__office.isActive()") is False and 5 <= f1 - f0 <= 14, (f1 - f0, fr.evaluate("__office.isActive()")))
         page.context.close()
     check("normal motion: the banner's red pulses", rng[False] > rng[True] + 0.6 and rng[False] > 1.0, rng)
 
@@ -347,6 +373,16 @@ def run(browser, base, engine):
     # rules
     print(f"[{engine}] the rules and the buttons")
     page.wait_for_timeout(900)
+
+    def serve(v):
+        page.evaluate("(v) => { window.__fake.view.zh = v; }", v)
+
+    def rules_view(mem=10, mem_on=True, cpu_on=False):               # what the backend would answer once a rule is changed
+        def f(v):
+            it = v["sections"][5]["widgets"][0]["items"]
+            it[0]["value"], it[0]["on"], it[1]["on"] = mem, mem_on, cpu_on
+        return view("alert", "zh", extra=f)
+
     oc0 = fake(page)["objCalls"]
     n_acts = len(fake(page)["acts"])
     fr.evaluate("(() => { const i = document.querySelector('.op-num'); i.focus(); i.value = '15'; i.dispatchEvent(new Event('change', {bubbles: true})); })()")
@@ -354,14 +390,21 @@ def run(browser, base, engine):
     a = fake(page)["acts"][n_acts:]
     check("a number sends set_rule {id, on, value} through office_object_action(id, '', 'set_rule', json, lang)",
           a and a[-1][:3] == ["ops", "", "set_rule"] and json.loads(a[-1][3]) == {"id": "mem_pressure_high", "on": True, "value": 15} and a[-1][4] in ("zh", "zh-TW"), a)
+    serve(rules_view(15))
+    page.wait_for_timeout(900)
+    check("…and the field keeps the focus and shows what the backend says", fr.evaluate("document.querySelector('.op-num').value") == "15" and fr.evaluate("document.activeElement.classList.contains('op-num')"))
     fr.evaluate("(() => { const i = document.querySelector('.op-num'); i.focus(); i.value = '999'; i.dispatchEvent(new Event('change', {bubbles: true})); })()")
     page.wait_for_timeout(300)
     a = fake(page)["acts"]
     check("a value over the field's max is clamped to it (120)", json.loads(a[-1][3])["value"] == 120, a[-1])
+    serve(rules_view(120))
+    page.wait_for_timeout(800)
     fr.evaluate("document.querySelectorAll('.op-sw')[0].click()")
     page.wait_for_timeout(300)
     a = fake(page)["acts"]
     check("the switch sends set_rule with on: false and the number it has", json.loads(a[-1][3]) == {"id": "mem_pressure_high", "on": False, "value": 120}, a[-1])
+    serve(rules_view(120, False))
+    page.wait_for_timeout(800)
     fr.evaluate("document.querySelectorAll('.op-sw')[1].click()")
     page.wait_for_timeout(300)
     check("a rule that was off: on: true", json.loads(fake(page)["acts"][-1][3]) == {"id": "cpu_high", "on": True, "value": 5}, fake(page)["acts"][-1])
@@ -370,21 +413,38 @@ def run(browser, base, engine):
     page.wait_for_timeout(300)
     a = fake(page)["acts"][-1]
     check("靜音 1 小時 sends mute {minutes: 60}", a[2] == "mute" and json.loads(a[3]) == {"minutes": 60}, a)
+    serve(rules_view(15))                                         # the person had changed things; the defaults are 10, on, off
+    page.wait_for_timeout(800)
+    serve(rules_view(10))
     fr.click('[data-op="reset"]')
-    page.wait_for_timeout(300)
+    page.wait_for_timeout(900)
     check("the defaults button sends reset_rules", fake(page)["acts"][-1][2] == "reset_rules", fake(page)["acts"][-1])
-    page.evaluate("(v) => { window.__fake.view.zh = v; }", view("muted", "zh"))
-    page.wait_for_timeout(1000)
-    page.evaluate("() => { const o = window.__fake.objects.find(x => x.id === 'ops'); o.level = 'muted'; }")
-    check("a muted banner offers 取消靜音 (and no mute)", fr.evaluate("!!document.querySelector('.op-banner') && document.querySelector('.op-banner').className.includes('b-muted')") and fr.query_selector('[data-op="unmute"]') is not None and fr.query_selector('[data-op="mute"]') is None)
+    check("…and the rules section shows the defaults at once, though the focus is in it",
+          fr.evaluate("document.querySelector('.op-num').value") == "10" and fr.evaluate("document.querySelectorAll('.op-sw')[0].getAttribute('aria-checked')") == "true"
+          and fr.evaluate("document.querySelectorAll('.op-sw')[1].getAttribute('aria-checked')") == "false")
+    # a refused change springs back
+    page.evaluate("window.__fake.actRes = {ok: false, message: '這個沒成功'}")
+    fr.evaluate("document.querySelectorAll('.op-sw')[0].click()")
+    page.wait_for_timeout(300)
+    check("a refused change is said in the footer (not silently)", "這個沒成功" in fr.evaluate("document.getElementById('opMsg').textContent") and fr.evaluate("document.getElementById('opMsg').classList.contains('bad')"))
+    page.wait_for_timeout(900)
+    check("…and the switch springs back to what the backend still has (on)", fr.evaluate("document.querySelectorAll('.op-sw')[0].getAttribute('aria-checked')") == "true"
+          and fr.evaluate("document.querySelectorAll('.op-sw')[0].classList.contains('on')"))
+    page.evaluate("window.__fake.actRes = {ok: true, message: 'ok'}")
+    # muted: the backend's banner keeps the level it is under (alert); the object's level says muted
+    set_objects(page, [BOOKSHELF, PERSONNEL, decl("muted", "記憶體壓力高 12 分鐘")], "muted")
+    page.wait_for_timeout(900)
+    check("muted (object level muted, banner still alert): the banner goes quiet and offers 取消靜音, not 靜音",
+          fr.evaluate("document.querySelector('.op-banner').className.includes('b-muted')") and fr.query_selector('[data-op="unmute"]') is not None and fr.query_selector('[data-op="mute"]') is None)
     fr.click('[data-op="unmute"]')
     page.wait_for_timeout(300)
     check("取消靜音 sends unmute", fake(page)["acts"][-1][2] == "unmute")
-    page.evaluate("window.__fake.actRes = {ok: false, message: '這個沒成功'}")
-    fr.click('[data-op="reset"]')
-    page.wait_for_timeout(300)
-    check("a refused action is said, in the footer (not silently)", "這個沒成功" in fr.evaluate("document.getElementById('opMsg').textContent") and fr.evaluate("document.getElementById('opMsg').classList.contains('bad')"))
-    page.evaluate("window.__fake.actRes = {ok: true, message: 'ok'}")
+    set_objects(page, [BOOKSHELF, PERSONNEL, decl("alert", "記憶體壓力高 12 分鐘")], "alert")
+    serve(view("alert", "zh", extra=lambda v: v.update(banner=None)))
+    page.wait_for_timeout(1000)
+    check("no banner from the backend: the buttons are still there (靜音, 調整規則)", fr.query_selector('[data-op="mute"]') is not None and fr.query_selector('[data-op="rules"]') is not None)
+    serve(view("alert", "zh"))
+    page.wait_for_timeout(800)
     fr.click('[data-op="rules"]')
     page.wait_for_timeout(500)
     check("調整規則 goes to the rules and puts the focus on one", fr.evaluate("!!document.activeElement && document.activeElement.closest('.op-sec') && document.activeElement.closest('.op-sec').dataset.sec") == "rules")
@@ -439,6 +499,15 @@ def run(browser, base, engine):
         page.wait_for_timeout(900)
         check(f"[{how}] …no more calls after it", len(fake(page)["live"]) == n, (n, len(fake(page)["live"])))
         fr.evaluate("__office.objClose()")
+    # the whole office closes with the window open: the iframe goes without passing through the window's own close
+    fr.evaluate("__office.ops().open()")
+    page.wait_for_timeout(300)
+    n_open = len(fake(page)["live"])
+    page.evaluate("SFOffice.close()")
+    page.wait_for_timeout(500)
+    check("closing the whole office with the window open still says `live` off", len(fake(page)["live"]) > n_open and fake(page)["live"][-1] == ["ops", False], fake(page)["live"][n_open - 1:])
+    fr = open_lobby(page)
+    fr.evaluate("__office.ops().timing.hb = 350; __office.ops().timing.minRefresh = 200")
     fr.evaluate("__office.ops().open()")
     page.wait_for_timeout(300)
     fr.evaluate("__office.objOpen('bookshelf')")

@@ -130,13 +130,14 @@
       });
       return;
     }
-    const r = 20, cy = y0 + (H - 17 - y0) / 2 - 4;
+    // The body between the header and the foot: two rings with their labels, and under the memory ring its last readings when there is room (not under a banner)
+    const sp = f ? arr(f.spark).filter(v => num(v) != null).slice(-12) : [], avail = H - 27 - y0, withSpark = sp.length > 1 && avail >= 75;
+    const r = withSpark ? 20 : Math.min(20, (avail - 20) / 2), cy = y0 + 4 + (avail - (2 * r + (withSpark ? 31 : 20))) / 2 + r;
     ring(x, g, 48, cy, r, cpu, cpuCol, 'CPU', dim);
     ring(x, g, 140, cy, r, mem, memCol, tr('Memory', '記憶體'), dim);
-    const sp = f ? arr(f.spark).filter(v => num(v) != null).slice(-12) : [];       // memory % over the last readings, under the memory ring
-    if (sp.length > 1) {
+    if (withSpark) {
       x.strokeStyle = dim ? '#6b7399' : memCol; x.lineWidth = 2; x.lineJoin = 'round'; x.beginPath();
-      sp.forEach((v, i) => { const px = 110 + i * 60 / (sp.length - 1), py = cy + r + 26 - clamp(v, 0, 100) / 100 * 8; i ? x.lineTo(px, py) : x.moveTo(px, py); }); x.stroke();
+      sp.forEach((v, i) => { const px = 110 + i * 60 / (sp.length - 1), py = cy + r + 31 - clamp(v, 0, 100) / 100 * 8; i ? x.lineTo(px, py) : x.moveTo(px, py); }); x.stroke();
     }
     // the network: the two rates as numbers (a line of the memory would be a lie), a red word when it is offline
     const nx = 196;
@@ -264,6 +265,7 @@
       obj = o && o.id === ID ? o : null;
       paintButton();
       if (S && !obj) close();
+      else if (S && S.view) { S.bsig = ''; paint(S.view); }       // the banner's buttons follow the object (muted or not) at once
       kick();
     }
     const active = () => !!obj;
@@ -370,15 +372,16 @@
       return '';
     }
     function bannerHtml(v) {
-      const b = v.banner && typeof v.banner === 'object' ? v.banner : null;
-      if (!b) return '';
-      const lv = LEVELS.has(b.level) ? b.level : 'none', muted = lv === 'muted' || (obj && obj.level === 'muted');
-      const sub = [b.since != null && num(b.since) != null ? tr(`Since ${hhmm(b.since)}`, `${hhmm(b.since)} 起`) : '',
-        b.rule ? (ruleLabel(v, b.rule) ? tr('Rule: ', '規則：') + ruleLabel(v, b.rule) : '') : ''].filter(Boolean).join('  ·  ');
+      const b0 = v.banner && typeof v.banner === 'object' ? v.banner : null;
+      const b = b0 || { level: obj && LEVELS.has(obj.level) ? obj.level : 'none', text: obj && obj.reason ? obj.reason : '', since: null, rule: '' };   // no banner from the backend: the buttons still have to be there
+      const raw = LEVELS.has(b.level) ? b.level : 'none', muted = raw === 'muted' || !!(obj && (obj.level === 'muted' || (num(obj.muted_until) != null && obj.muted_until > nowS())));
+      const lv = muted ? 'muted' : raw;                           // a muted alert is shown quiet: the text still says why (and until when)
+      const sub = [num(b.since) != null ? tr(`Since ${hhmm(b.since)}`, `${hhmm(b.since)} 起`) : '',
+        b.rule && ruleLabel(v, b.rule) ? tr('Rule: ', '規則：') + ruleLabel(v, b.rule) : ''].filter(Boolean).join('  ·  ');
       const ic = ICON(lv === 'ok' ? 'check-circle' : lv === 'alert' || lv === 'warn' ? 'warn' : 'clock');
       return `<div class="op-banner b-${lv}" role="${lv === 'alert' ? 'alert' : 'status'}"><span class="op-bi" aria-hidden="true">${ic}</span>` +
         `<div class="op-bt"><b>${esc(b.text)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</div>` +
-        `<div class="op-ba">${lv === 'none' ? '' : muted ? `<button type="button" class="oo-btn" data-op="unmute">${esc(tr('Unmute', '取消靜音'))}</button>` : `<button type="button" class="oo-btn" data-op="mute">${esc(tr('Mute for 1 hour', '靜音 1 小時'))}</button>`}` +
+        `<div class="op-ba">${raw === 'none' && !muted ? '' : muted ? `<button type="button" class="oo-btn" data-op="unmute">${esc(tr('Unmute', '取消靜音'))}</button>` : `<button type="button" class="oo-btn" data-op="mute">${esc(tr('Mute for 1 hour', '靜音 1 小時'))}</button>`}` +
         `<button type="button" class="oo-btn" data-op="rules">${esc(tr('Adjust rules', '調整規則'))}</button></div></div>`;
     }
     // Patch only what changed: the banner, then each section by its markup. A section with a field in focus is left alone this round.
@@ -395,12 +398,15 @@
       }
       const bh = bannerHtml(v);
       if (bh !== S.bsig) { S.bsig = bh; $('#opBan').innerHTML = bh; }
-      const focus = doc.activeElement;
+      const focus = doc.activeElement, force = S.force; S.force = false;
       secs.forEach((s, i) => {
         const el = inner.querySelector(`.op-sec[data-sec="${CSS.escape(s.id)}"] .op-sb`), sig = s.title + '\u0001' + s.html;
-        if (!el || S.sigs[i] === sig) return;
-        if (focus && el.contains(focus) && /INPUT|BUTTON|SELECT/.test(focus.tagName)) return;     // someone is typing here
+        if (!el || (S.sigs[i] === sig && !force)) return;
+        const here = focus && el.contains(focus) ? focus : null;
+        if (here && !force && here.tagName === 'INPUT' && here.value !== here.defaultValue) return;     // a number typed and not sent yet: left alone
+        const keep = here && here.closest('.op-rule') ? [here.closest('.op-rule').dataset.rule, here.dataset.op] : null;
         S.sigs[i] = sig; el.innerHTML = s.html; el.parentNode.querySelector('h3').textContent = s.title;
+        if (keep) { const again = [...el.querySelectorAll('.op-rule')].find(r => r.dataset.rule === keep[0]); const c = again && again.querySelector(`[data-op="${keep[1]}"]`); if (c) try { c.focus({ preventScroll: true }); } catch (_) {} }   // the control the person used keeps the focus
       });
       $('#opBody').scrollTop = top;
     }
@@ -416,6 +422,7 @@
       const ok = !!(r && r.success !== false && r.ok !== false);
       say((r && r.message) || (ok ? tr('Done.', '好了。') : tr('That did not work.', '這個沒成功。')), !ok);
       if (E.changed) { try { E.changed(); } catch (_) {} }
+      S.force = true;                                             // the sections show what the backend now says (a refused change springs back), whoever has the focus
       refresh();
       return ok;
     }
