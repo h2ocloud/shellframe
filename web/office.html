@@ -162,6 +162,8 @@ body.embedded #top{padding-right:calc(58px / var(--ui))}   /* ShellBot's close b
 .pname{font-size:16.5px;font-weight:700;display:flex;align-items:center;gap:6px;white-space:nowrap}
 .pname .star{color:var(--yellow);font-size:12.5px}
 .psub{font-size:12px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pclose{width:30px;height:30px;border-radius:9px;border:1px solid var(--line);background:#24283b;color:var(--dim);flex:none;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.pclose:hover{color:var(--ink);border-color:var(--blue)}
 .pchip{--c:var(--blue);margin-left:auto;flex:none;font-size:12px;font-weight:700;padding:4px 10px;border-radius:99px;color:var(--c);border:1px solid var(--c);background:rgba(26,27,38,.5);white-space:nowrap}
 .pbody{flex:1;overflow:auto;padding:14px 16px 16px;overscroll-behavior:contain}
 .duty{font-size:13px;line-height:1.6;color:var(--ink)}
@@ -706,6 +708,7 @@ body.searching #top.f-search #qres{left:0;right:0;width:auto}
     <img id="pAv" alt="">
     <div class="nm"><div class="pname" id="pName"></div><div class="psub" id="pSub"></div></div>
     <span class="pchip" id="pChip"></span>
+    <button class="vx pclose" id="pClose" type="button" title="收起（Esc）" aria-label="收起"><i data-sfi="close"></i></button>
   </div>
   <div class="ptabs" id="pTabs" role="tablist" hidden>
     <button role="tab" id="tabChat" data-tab="chat" aria-controls="pChat" aria-selected="true">對話</button>
@@ -807,7 +810,7 @@ function applyOfficeCopy() {
   attr('#zoomIn', 'title', 'Zoom in', '放大'); attr('#zoomIn', 'aria-label', 'Zoom in', '放大');
   text('#fitAll', 'Whole floor', '全景'); attr('#fitAll', 'title', 'Show the whole floor', '看整層');
   attr('#panel', 'aria-label', 'Followed coworker', '追蹤中的同事'); attr('#pHead', 'title', 'Return camera to them', '鏡頭回到他身上');
-  text('#tabChat', 'Chat', '對話'); text('#tabInfo', 'Info', '資料');
+  attr('#pClose', 'title', 'Close (Esc)', '收起（Esc）'); attr('#pClose', 'aria-label', 'Close', '收起'); text('#tabChat', 'Chat', '對話'); text('#tabInfo', 'Info', '資料');
   text('#cOpen', 'Open their tab ↗', '到他的分頁 ↗'); attr('#cOpen', 'title', 'Close the office and switch to their tab', '關掉辦公室，切到他的分頁');
   attr('#cBox', 'aria-label', 'Message', '傳話'); text('#cSend', 'Send', '送出'); attr('#cSend', 'title', 'Send (Enter)', '送出（Enter）');
   text('#pInfo .events h3', 'Recent events', '最近事件');
@@ -1804,10 +1807,11 @@ function startFollow(key) {
   document.body.classList.add('following'); const p = $('#panel'); p.classList.add('open'); p.setAttribute('aria-hidden', 'false');
   renderPanel(true); kick();
 }
-function stopFollow(silent) {
+// 收起面板、停止跟拍：鏡頭留在當下的位置和縮放（不縮回全景；要看全部用右下角「全景」）。silent 只剩相容舊呼叫，行為一樣。
+function stopFollow() {
   if (!follow) return; follow = null; followCam = false; goal = null; chatSync(null); renderBye(null);
   document.body.classList.remove('following'); const p = $('#panel'); p.classList.remove('open'); p.setAttribute('aria-hidden', 'true');
-  if (!silent) fit(); kick();
+  kick();
 }
 
 /* ══════════ 11.5 對話：跟拍的人有自己的分頁時，看他的對話、直接傳話 ══════════
@@ -3248,6 +3252,7 @@ addEventListener('keydown', e => {
 });
 $('#stats').addEventListener('click', e => { const b = e.target.closest('.stat'); if (b) setHl(b.dataset.k); });
 $('#stopFollow').onclick = () => stopFollow();
+$('#pClose').onclick = ev => { ev.stopPropagation(); stopFollow(); };
 $('#dismiss').onclick = () => pressBye();
 $('#zoning').value = zoning;
 $('#zoning').addEventListener('change', ev => setZoning(ev.target.value));
