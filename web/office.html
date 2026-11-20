@@ -747,6 +747,7 @@ body.searching #top.f-search #qres{left:0;right:0;width:auto}
 <script src="icons.js"></script>
 <script src="deliv_draw.js"></script>
 <script src="office_objects.js"></script>
+<script src="office_arrange.js"></script>
 <script src="office_ops.js"></script>
 <script>
 (() => {
@@ -1032,15 +1033,16 @@ function layout() {
   seat({ key: 'sec', room: 'lobby', lx: 9.4, ly: 1.0, w: 1.05, h: 2.7, face: 'nx', big: true });
   for (let i = 0; i < nT; i++) { const t = Math.floor(i / TMAX), j = i % TMAX; seat({ key: 't:' + i, room: 'lobby', lx: 1.6 + j * 1.2, ly: 4.8 + t * 2.3, w: 1.2, h: .75, face: 'ny', shared: true }); }
   // 隔壁電腦：每台一間房，排在大廳前面
-  let py = LH + 3.6;
+  let py = LH + 3.6; const ring = ARRG.active(), PL = [];   // ring：整理位置（office_arrange.js）排過，或正在整理；沒有就是原來的直排
   for (const pe of M.peers.values()) {
     let n = 3; for (const i of pe.assign.values()) n = Math.max(n, i + 1);
     const cols = Math.min(4, n), rows = Math.ceil(n / 4), w = .9 + cols * COLP + .9, h = .6 + rows * ROWP + .5;
-    setRoom('peer:' + pe.id, { kind: 'peer', label: '隔壁：' + pe.name, tx: .8, ty: py, tw: w, th: h, wallH: 40, peerId: pe.id, primary: pe.primaryName || '' });
+    const props = { kind: 'peer', label: '隔壁：' + pe.name, wallH: 40, peerId: pe.id, primary: pe.primaryName || '' };
+    if (ring) PL.push({ pe, w, h, props: Object.assign({ tw: w, th: h }, props) }); else setRoom('peer:' + pe.id, Object.assign({ tx: .8, ty: py, tw: w, th: h }, props));
     for (let i = 0; i < n; i++) seat({ key: `p:${pe.id}:${i}`, room: 'peer:' + pe.id, lx: .9 + (i % 4) * COLP, ly: .6 + Math.floor(i / 4) * ROWP, w: 1.5, h: .8, face: 'ny', big: i === 0 && !!pe.primaryKey });
     py += h + G;
   }
-  const lobbyColY = M.peers.size ? py - G : LH;
+  const lobbyColY = M.peers.size && !ring ? py - G : LH;
   // 各區：用到幾排就蓋幾排（最多 3 排 × 4 位）；欄數取「整層最不寬」的排法
   const zs = M.zones.slice().sort(byZone).map(z => { let mx = -1; for (const a of M.assign.values()) if (a.zone === z.key) mx = Math.max(mx, a.slot); const rows = clamp(Math.ceil((mx + 1) / 4), 1, 3); return { z, rows, d: .6 + rows * ROWP + .3 }; });
   let best = null;
@@ -1058,10 +1060,13 @@ function layout() {
     setRoom(id, { kind: 'zone', team: q.z.team, zone: q.z.key, label: q.z.team + (q.z.n > 1 ? ' ' + q.z.n : ''), tx, ty, tw: ZW, th: q.d, wallH: 40, row });
     for (let s = 0; s < q.rows * 4; s++) seat({ key: `z:${q.z.key}:${s}`, room: id, lx: .9 + (s % 4) * COLP, ly: .6 + Math.floor(s / 4) * ROWP, w: 1.5, h: .8, face: 'ny', zone: q.z.key, slot: s });
   });
+  M.arr = null;
+  if (ring && PL.length) { M.arr = ARRG.place(PL, best.X, Math.max(best.Y, LH)); for (const q of PL) { const sl = M.arr.at.get(q.pe.id); setRoom('peer:' + q.pe.id, Object.assign({ tx: sl.x, ty: sl.y }, q.props)); } }
   for (const [id, r] of M.rooms) if (r.gen !== M.gen) M.rooms.delete(id);
   M.seats = S;
   M.plaza = { lobby: { x: 0, y: 0, w: LW, h: LH }, zone: { x: LW, y: 0, w: Math.max(G, best.X - LW), h: Math.max(LH, best.zoneY) } };
   M.bounds = { x0: -.8, y0: -.6, x1: best.X + .4, y1: Math.max(best.Y, LH) + .4 };
+  if (M.arr) M.bounds = ARRG.bounds(M.arr, M.rooms, M.bounds);
   // 座位上的人
   for (const s of S.values()) s.occ = null;
   for (const e of M.ents.values()) { const s = e.seatKey && S.get(e.seatKey); if (s) s.occ = e; }
@@ -1132,7 +1137,7 @@ const isMobile = () => W <= 720;
 const wantTp = () => V.to < .5 && W < H && W <= 720;
 const t2s = (x, y, z = 0) => { const p = P(x, y, z); return { x: (p.x - cam.x) * cam.z + W / 2, y: (p.y - cam.y) * cam.z + H / 2 }; };
 function viewRect() {
-  const top = $('#top').getBoundingClientRect().bottom; let l = 0, r = W, t = top, b = H;
+  const top = Math.max($('#top').getBoundingClientRect().bottom, ARRG.inset()); let l = 0, r = W, t = top, b = H;
   if (follow) { const pr = $('#panel').getBoundingClientRect(); if (isMobile()) b = H - Math.min(pr.height, H * .6); else r = W - pr.width - 24; }
   return { l, r, t, b, w: r - l, h: b - t, cx: (l + r) / 2, cy: (t + b) / 2 };
 }
@@ -1145,13 +1150,18 @@ function worldBox(x0, y0, x1, y1, zTop) {
 function withTarget(fn) { const m = V.m, tp = V.tp; V.m = V.to; V.tp = wantTp(); const r = fn(); V.m = m; V.tp = tp; return r; }
 function areaBox(id) {
   const r = M.rooms.get(id), B = M.bounds;
-  return r ? worldBox(r.tx - .4, r.ty - .4, r.tx + r.tw + .4, r.ty + r.th + .4, r.wallH + 44) : worldBox(B.x0, B.y0, B.x1, B.y1, 80);
+  if (r) return worldBox(r.tx - .4, r.ty - .4, r.tx + r.tw + .4, r.ty + r.th + .4, r.wallH + 44);
+  const all = worldBox(B.x0, B.y0, B.x1, B.y1, 80);
+  if (M.arr) { const bb = worldBox(0, 0, M.arr.BX, M.arr.BY, 66), cx = (bb.x0 + bb.x1) / 2, hw = Math.max(cx - all.x0, all.x1 - cx);   // 整理位置：「全景」的水平中心是這台電腦的大樓，隔壁電腦左右對稱地算進去
+    return { x0: cx - hw, x1: cx + hw, y0: all.y0, y1: all.y1, w: hw * 2, h: all.h }; }
+  return all;
 }
 function fitGoal(id = area) {
   return withTarget(() => {
     const b = areaBox(id), vr = viewRect(), pad = isMobile() ? 14 : 32, foot = follow ? 0 : isMobile() ? 24 : 64;
-    const z = clamp(Math.min((vr.w - pad * 2) / b.w, (vr.h - pad * 2 - foot) / b.h), .12, id === 'all' ? 1.9 : 1.7);
-    return aim({ x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 }, vr.cx, vr.cy - foot / 2, z);
+    const z = clamp(Math.min((vr.w - pad * 2) / b.w, (vr.h - pad * 2 - foot) / b.h), ARRG.editing() ? .06 : .12, id === 'all' ? 1.9 : 1.7);   // 整理位置時多退一圈，窄螢幕要退得更遠才放得下
+    const g = aim({ x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 }, vr.cx, vr.cy - foot / 2, z), B = M.bounds, bb = worldBox(B.x0, B.y0, B.x1, B.y1, 80);
+    g.x = clamp(g.x, bb.x0, bb.x1); g.y = clamp(g.y, bb.y0, bb.y1); return g;   // clampCam 夾不到的目標，鏡頭會永遠追不上（縮到最小還放不下時）
   });
 }
 function fit(instant) { goal = fitGoal(); if (instant) { Object.assign(cam, goal); goal = null; } kick(); }
@@ -1189,10 +1199,12 @@ function gridLines(x, x0, y0, w, h, col) {
 function drawPlaza(x, far) {
   const pz = M.plaza; if (!pz) return;
   const slab = { l: '#191b29', r: '#13141e', t: '#1e2131' };
+  if (M.arr) ARRG.floor(x, far, 'yard');   // 整理位置：大樓四周的院子先鋪，大樓的地板鋪在它上面
   box(x, pz.lobby.x, pz.lobby.y, pz.lobby.w, pz.lobby.h, -SLAB, SLAB, { ...slab, t: '#22253a' });
   if (pz.zone.w > 0) { box(x, pz.zone.x, pz.zone.y, pz.zone.w, pz.zone.h, -SLAB, SLAB, slab); if (!far) gridLines(x, pz.zone.x, pz.zone.y, Math.round(pz.zone.w), Math.round(pz.zone.h), 'rgba(192,202,245,.028)'); }
   // 中央走廊的導引線
   if (!far && pz.zone.w > 0) { const a = P(M.spineX, .6), b = P(M.spineX, pz.zone.h - .6); x.setLineDash([2, 8]); x.strokeStyle = 'rgba(192,202,245,.12)'; x.lineWidth = 2; x.beginPath(); x.moveTo(a.x, a.y); x.lineTo(b.x, b.y); x.stroke(); x.setLineDash([]); }
+  if (M.arr) { ARRG.floor(x, far, 'links'); return; }   // 整理位置：走道和連線在 office_arrange.js；下面是原來的直排連線橋
   // 到隔壁電腦的連線橋
   let fromY = M.LH;   // 第一台從大廳前緣接過去，第二台以後從前一台的前緣接（不穿過別的房間）
   for (const r of [...M.rooms.values()].filter(q => q.kind === 'peer').sort((a, b) => a.ty - b.ty)) {
@@ -2051,6 +2063,13 @@ const OBJ = OfficeObjects.create({
   view: (v, task) => { if (v === 'board') applyFocus({ task: task == null ? null : task }); else if (view !== 'cal') openView('cal'); },
   follow: key => { if (M.ents.get(key)) startFollow(key); },
 });
+const ARRG = OfficeArrange.create({   // 整理位置：把隔壁電腦的房間排到這台電腦四周（office_arrange.js）
+  tr, doc: document, kick: () => kick(), store, toast: m => toast(m), G, hidden: BOARD_ONLY,
+  peers: () => M.peers, rooms: () => M.rooms, arr: () => M.arr, COL, FONT, RM,
+  P: (x, y, z) => P(x, y, z), t2s: (x, y, z) => t2s(x, y, z), fquad: (...a) => fquad(...a), poly: (...a) => poly(...a), box: (...a) => box(...a), ellipse: (...a) => ellipse(...a), alpha, pill: (...a) => pill(...a),
+  ctx: () => c, dpr: () => DPR, time: () => T, view: () => ({ z: cam.z, m: V.m }),
+  relayout: () => { layout(); M.ver++; kick(); }, showAll: () => setArea('all'), prepare: () => { if (follow) stopFollow(true); },
+});
 // 維運戰情：牆上的電視、右下角的「維運」鈕和詳細畫面（web/office_ops.js）。電視不走地板格（OBJ.place 略過 furniture 'tv'）：它是牆上的東西，和白板、日曆同一套（wallAt、wq 投影）。
 // 只有 experimental_ops 開著、registry 有 ops 物件時才有（OPS.active()）；畫面開著時，後端每 2 秒量一次，關掉就回到每 5 分鐘。
 const OPS = OfficeOps.create({
@@ -2906,8 +2925,11 @@ function draw() {
   }
   for (const r of rings) { const k = r.t / r.max, p = P(r.x, r.y), e = floorR(.3 + .9 * easeOut(k)); ellipse(c, p.x, p.y, e.rx, e.ry, null, alpha(r.color, (1 - k) * .9), 2.2); }
   for (const pp of papers) drawPaper(c, pp);
+  if (M.arr && ARRG.editing()) ARRG.drawWorld(c);
   c.restore();
   drawOverlay(far);
+  if (M.arr && ARRG.editing()) ARRG.drawOverlay();
+  ARRG.sync();
   lastDrawMs = performance.now() - t0;
 }
 // 文字與泡泡：最後一層，用螢幕座標畫，縮放時字不會糊、也不會被前排桌子蓋住
@@ -2978,7 +3000,7 @@ function roomSign(r, far, placed) {
 function drawOverlay(far) {
   c.setTransform(DPR, 0, 0, DPR, 0, 0);
   const bs = clamp(cam.z * .95, .72, 1.12), showAll = !far && cam.z >= (V.to < .5 ? .36 : .7), nfs = Math.max(isMobile() ? 9.5 : 10, 11.5 * bs);
-  const placed = []; for (const r of M.rooms.values()) roomSign(r, far, placed);
+  const placed = []; for (const r of M.rooms.values()) { if (r.kind === 'peer' && ARRG.editing()) continue; roomSign(r, far, placed); }   // 整理位置時，隔壁的標籤換成把手
   if (M.rooms.get('lobby') && !far) { const iso = V.m >= .5, p = iso ? t2s(1.6 + Math.min(TMAX, M.nT) * .6, M.LH - .15, 0) : V.tp ? t2s(1.35, 4.8 + Math.min(TMAX, M.nT) * .3, 0) : t2s(1.6 + Math.min(TMAX, M.nT) * .6, 4.55, 0);
     c.font = `600 ${Math.round(11 * bs)}px ${FONT}`; c.fillStyle = alpha(COL.yellow, .75); c.textAlign = 'center'; c.textBaseline = iso ? 'top' : 'bottom'; c.fillText('實習生區 · 不是 bot 的 AI 分頁', p.x, p.y + (iso ? 5 : -4) * bs); }
   const list = []; for (const e of M.ents.values()) { if ((e.gone && !showAll) || (e.walk && e.walk.t < 0) || e.hidden) continue; const h = headTop(e); if (!h || h.x < -80 || h.x > W + 80 || h.y < -80 || h.y > H + 80) continue; list.push({ e, h }); }
@@ -3073,7 +3095,7 @@ function pickSeat(sx, sy) { // 拖曳的目標：各區的座位（有人或空�
   for (const s of M.seats.values()) { if (!s.zone) continue; const g = geo(s); const p = t2s(g.cx, g.cy, 10), d = Math.hypot(sx - p.x, sy - (p.y - 12 * cam.z)); if (d < rad && d < bd) { bd = d; best = s; } }
   return best;
 }
-const canDrag = e => e && e.kind === 'bot' && !e.gone && e.id !== M.primaryId && !e.walk && e.seatKey && e.seatKey.startsWith('z:');
+const canDrag = e => !ARRG.editing() && e && e.kind === 'bot' && !e.gone && e.id !== M.primaryId && !e.walk && e.seatKey && e.seatKey.startsWith('z:');
 const ptrs = new Map(); let drag = null, pinch = null, lpTimer = 0;
 function enterSeatDrag(sx, sy) { drag.mode = 'seat'; drag.x = sx; drag.y = sy; cv.classList.add('seat'); updateSeatTarget(sx, sy); kick(); }
 function updateSeatTarget(sx, sy) { const e = M.ents.get(drag.key), s = pickSeat(sx, sy); drag.target = s && s.key !== e.seatKey ? s : null; drag.ok = !!drag.target && (zoning === 'custom' || M.rooms.get(drag.target.room).team === e.who.team) && !(drag.target.occ && drag.target.occ.walk); }
@@ -3171,7 +3193,7 @@ addEventListener('keydown', e => {
   if (HOST && HOST.isBoardKey && HOST.isBoardKey(e)) { e.preventDefault(); e.stopPropagation(); if (BOARD_ONLY) HOST.close(); else openView('board'); return; }   // 看板快捷鍵：焦點在這個框裡時主頁收不到
   if (e.key === 'Escape' && view === 'cal' && CAL.pop) { e.preventDefault(); calClosePop(); return; }   // 日曆：Esc 先關細節卡（焦點在卡裡的選單、時間欄也算），再關檢視
   if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) { if (e.key === 'Escape' && e.target.tagName === 'SELECT') e.target.blur(); else return; }   // 選完區域後焦點留在選單上：Esc 照樣能退出
-  if (e.key === 'Escape') { if (drag && drag.mode === 'seat') { drag = null; return; } if (OBJ.esc() || OPS.esc()) return; if (view) { if (vstate.open.size) closeDetail(); else closeView(); } else if (follow) stopFollow(); else if (hl) setHl(hl); else if (HOST && HOST.close) HOST.close(); return; }
+  if (e.key === 'Escape') { if (ARRG.esc()) return; if (drag && drag.mode === 'seat') { drag = null; return; } if (OBJ.esc() || OPS.esc()) return; if (view) { if (vstate.open.size) closeDetail(); else closeView(); } else if (follow) stopFollow(); else if (hl) setHl(hl); else if (HOST && HOST.close) HOST.close(); return; }
   if (view || OBJ.isOpen() || OPS.isOpen()) return;   // 蓋板開著：其他快捷鍵不碰底下的辦公室
   if (e.key === '/' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); if (getComputedStyle($('#search')).display === 'none') document.body.classList.add('searching'); q.focus(); }
 });
@@ -3613,6 +3635,7 @@ $('#addTen').onclick = () => addBots(10);
 
 /* ══════════ 17. 給自動化測試用的掛鉤 ══════════ */
 window.__office = {
+  arr: ARRG.api,
   fit: () => ({ top: topFit, cls: $('#top').className, legend: $('#legend').className, legendBottom: $('#legend').style.bottom }),
   frames: () => frames, busyFrames: () => busyFrames, busyWhy: () => ({ papers: papers.length, rings: rings.length, walking: [...M.ents.values()].filter(e => e.walk).map(e => e.key + ':' + e.walk.dir), cam: camMoving(), morph: V.k < 1, rooms: [...M.rooms.values()].filter(r => r.alpha < 1 || Math.abs(r.tx - r.x) > .01 || Math.abs(r.ty - r.y) > .01 || Math.abs(r.th - r.h) > .01).map(r => r.id) }), counts, highlighted: () => counted().filter(e => hl && matches(hl, e)).length,
   following: () => follow, panelOpen: () => $('#panel').classList.contains('open'),

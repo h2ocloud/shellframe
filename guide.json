@@ -342,6 +342,22 @@
       }
     },
     {
+      "id": "office-arrange",
+      "surfaces": [
+        "desktop"
+      ],
+      "since": "0.61.0",
+      "flag": "experimental_office",
+      "title": {
+        "en": "Arrange positions",
+        "zh": "整理位置"
+      },
+      "body": {
+        "en": "In the office, the Arrange button at the bottom right lets you drag each paired computer's room onto a dashed cell around this computer. Done saves it; Reset goes back to the column. This computer stays in the center.",
+        "zh": "辦公室右下角的「整理位置」，讓你把每台配對電腦的房間拖到這台電腦四周的虛線格。按「完成」存起來，「還原預設」回到直排。這台電腦固定在正中。"
+      }
+    },
+    {
       "id": "office-personnel",
       "surfaces": [
         "desktop"
