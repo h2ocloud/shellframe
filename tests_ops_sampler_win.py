@@ -56,6 +56,17 @@ check("Windows pagefile: committed memory minus physical use",
       S.windows_swap(16 << 30, 8 << 30, 8 << 30, 6 << 30) == {"total": 8 << 30, "used": 2 << 30}
       and S.windows_swap(4 << 30, 1 << 30, 8 << 30, 7 << 30) == {"total": 0, "used": 0})
 
+print("Windows structures (any platform: fixed-width types, 64-bit Windows layout)")
+import ctypes  # noqa: E402
+_R = S._WIN_IF_ROW2
+check("MIB_IF_ROW2 is 1352 bytes", ctypes.sizeof(_R) == 1352, ctypes.sizeof(_R))
+check("…NetworkGuid sits between MediaConnectState and ConnectionType (1168)", _R.NetworkGuid.offset == 1168, _R.NetworkGuid.offset)
+check("…InOctets at 1208 and OutOctets at 1280", (_R.InOctets.offset, _R.OutOctets.offset) == (1208, 1280),
+      (_R.InOctets.offset, _R.OutOctets.offset))
+check("SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION is 48 bytes", ctypes.sizeof(S._WIN_PROCESSOR_INFO) == 48)
+check("MEMORYSTATUSEX is 64 bytes", ctypes.sizeof(S._WIN_MEMORY_STATUS) == 64)
+check("FILETIME is 8 bytes", ctypes.sizeof(S._WIN_FILETIME) == 8)
+
 if sys.platform == "win32":
     print("Windows API sample")
     sampler = S.Sampler(kind="win")

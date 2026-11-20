@@ -397,13 +397,13 @@ def _win_lib(name):
 
 
 class _WIN_PROCESSOR_INFO(ctypes.Structure):
-    _fields_ = [("IdleTime", ctypes.c_longlong), ("KernelTime", ctypes.c_longlong),
-                ("UserTime", ctypes.c_longlong), ("DpcTime", ctypes.c_longlong),
-                ("InterruptTime", ctypes.c_longlong), ("InterruptCount", ctypes.c_ulong)]
+    _fields_ = [("IdleTime", ctypes.c_int64), ("KernelTime", ctypes.c_int64),
+                ("UserTime", ctypes.c_int64), ("DpcTime", ctypes.c_int64),
+                ("InterruptTime", ctypes.c_int64), ("InterruptCount", ctypes.c_uint32)]
 
 
 class _WIN_FILETIME(ctypes.Structure):
-    _fields_ = [("dwLowDateTime", ctypes.c_ulong), ("dwHighDateTime", ctypes.c_ulong)]
+    _fields_ = [("dwLowDateTime", ctypes.c_uint32), ("dwHighDateTime", ctypes.c_uint32)]
 
 
 def _win_filetime(value):
@@ -457,11 +457,11 @@ def read_cpu_total_win():
 
 
 class _WIN_MEMORY_STATUS(ctypes.Structure):
-    _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
-                ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
-                ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
-                ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
-                ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+    _fields_ = [("dwLength", ctypes.c_uint32), ("dwMemoryLoad", ctypes.c_uint32),
+                ("ullTotalPhys", ctypes.c_uint64), ("ullAvailPhys", ctypes.c_uint64),
+                ("ullTotalPageFile", ctypes.c_uint64), ("ullAvailPageFile", ctypes.c_uint64),
+                ("ullTotalVirtual", ctypes.c_uint64), ("ullAvailVirtual", ctypes.c_uint64),
+                ("ullAvailExtendedVirtual", ctypes.c_uint64)]
 
 
 def read_memory_win():
@@ -483,32 +483,32 @@ def read_memory_win():
 
 
 class _WIN_IF_ROW2(ctypes.Structure):
+    """MIB_IF_ROW2 (netioapi.h), 1352 bytes on 64-bit Windows; tests_ops_sampler_win.py checks the size and the
+    counters' offsets on any platform, so ULONG is c_uint32 and WCHAR is c_uint16 (c_ulong and c_wchar are wider
+    off Windows)."""
     _fields_ = [
-        ("InterfaceLuid", ctypes.c_ulonglong), ("InterfaceIndex", ctypes.c_ulong),
-        ("InterfaceGuid", ctypes.c_ubyte * 16), ("Alias", ctypes.c_wchar * 257),
-        ("Description", ctypes.c_wchar * 257), ("PhysicalAddressLength", ctypes.c_ulong),
+        ("InterfaceLuid", ctypes.c_uint64), ("InterfaceIndex", ctypes.c_uint32),
+        ("InterfaceGuid", ctypes.c_ubyte * 16), ("Alias", ctypes.c_uint16 * 257),
+        ("Description", ctypes.c_uint16 * 257), ("PhysicalAddressLength", ctypes.c_uint32),
         ("PhysicalAddress", ctypes.c_ubyte * 32), ("PermanentPhysicalAddress", ctypes.c_ubyte * 32),
-        ("Mtu", ctypes.c_ulong), ("Type", ctypes.c_ulong), ("TunnelType", ctypes.c_ulong),
-        ("MediaType", ctypes.c_ulong), ("PhysicalMediumType", ctypes.c_ulong),
-        ("AccessType", ctypes.c_ulong), ("DirectionType", ctypes.c_ulong),
-        ("InterfaceAndOperStatusFlags", ctypes.c_ubyte), ("OperStatus", ctypes.c_ulong),
-        ("AdminStatus", ctypes.c_ulong), ("MediaConnectState", ctypes.c_ulong),
-        ("ConnectionType", ctypes.c_ulong), ("TransmitLinkSpeed", ctypes.c_ulonglong),
-        ("ReceiveLinkSpeed", ctypes.c_ulonglong), ("InOctets", ctypes.c_ulonglong),
-        ("InUcastPkts", ctypes.c_ulonglong), ("InNUcastPkts", ctypes.c_ulonglong),
-        ("InDiscards", ctypes.c_ulonglong), ("InErrors", ctypes.c_ulonglong),
-        ("InUnknownProtos", ctypes.c_ulonglong), ("InUcastOctets", ctypes.c_ulonglong),
-        ("InMulticastOctets", ctypes.c_ulonglong), ("InBroadcastOctets", ctypes.c_ulonglong),
-        ("OutOctets", ctypes.c_ulonglong), ("OutUcastPkts", ctypes.c_ulonglong),
-        ("OutNUcastPkts", ctypes.c_ulonglong), ("OutDiscards", ctypes.c_ulonglong),
-        ("OutErrors", ctypes.c_ulonglong), ("OutUcastOctets", ctypes.c_ulonglong),
-        ("OutMulticastOctets", ctypes.c_ulonglong), ("OutBroadcastOctets", ctypes.c_ulonglong),
-        ("OutQLen", ctypes.c_ulong),
+        ("Mtu", ctypes.c_uint32), ("Type", ctypes.c_uint32), ("TunnelType", ctypes.c_uint32),
+        ("MediaType", ctypes.c_uint32), ("PhysicalMediumType", ctypes.c_uint32),
+        ("AccessType", ctypes.c_uint32), ("DirectionType", ctypes.c_uint32),
+        ("InterfaceAndOperStatusFlags", ctypes.c_ubyte), ("OperStatus", ctypes.c_uint32),
+        ("AdminStatus", ctypes.c_uint32), ("MediaConnectState", ctypes.c_uint32),
+        ("NetworkGuid", ctypes.c_ubyte * 16), ("ConnectionType", ctypes.c_uint32),
+        ("TransmitLinkSpeed", ctypes.c_uint64), ("ReceiveLinkSpeed", ctypes.c_uint64),
+        ("InOctets", ctypes.c_uint64), ("InUcastPkts", ctypes.c_uint64), ("InNUcastPkts", ctypes.c_uint64),
+        ("InDiscards", ctypes.c_uint64), ("InErrors", ctypes.c_uint64), ("InUnknownProtos", ctypes.c_uint64),
+        ("InUcastOctets", ctypes.c_uint64), ("InMulticastOctets", ctypes.c_uint64), ("InBroadcastOctets", ctypes.c_uint64),
+        ("OutOctets", ctypes.c_uint64), ("OutUcastPkts", ctypes.c_uint64), ("OutNUcastPkts", ctypes.c_uint64),
+        ("OutDiscards", ctypes.c_uint64), ("OutErrors", ctypes.c_uint64), ("OutUcastOctets", ctypes.c_uint64),
+        ("OutMulticastOctets", ctypes.c_uint64), ("OutBroadcastOctets", ctypes.c_uint64), ("OutQLen", ctypes.c_uint64),
     ]
 
 
 class _WIN_IF_TABLE2(ctypes.Structure):
-    _fields_ = [("NumEntries", ctypes.c_ulong), ("Table", _WIN_IF_ROW2 * 1)]
+    _fields_ = [("NumEntries", ctypes.c_uint32), ("Table", _WIN_IF_ROW2 * 1)]
 
 
 def read_interfaces_win():
