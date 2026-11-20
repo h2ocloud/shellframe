@@ -293,6 +293,7 @@ def run(browser, base, engine):
     s = st(pg)
     check("Esc while carrying only puts the room down (still arranging)", s["on"] and s["dragging"] is None and cells(pg)["at"]["pidb"]["r"] == 0, s)
     pg.mouse.up()
+    settle(pg)                      # let the release land before the next press (pressing again at once was timing-dependent)
     drag_to(pg, "pidb", [-1, 2])
     check("…a drop is made", cells(pg)["at"]["pidb"]["r"] == 2)
     pg.keyboard.press("Escape")
