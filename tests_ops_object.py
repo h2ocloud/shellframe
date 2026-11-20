@@ -526,10 +526,40 @@ h._ops_push({"level": "alert", "reason": "Disk 'x'", "since": 5})
 js = h._window.evaluate_js.call_args[0][0]
 check("the page is told through window.__sfOpsLevel with level, reason, since", js.startswith("window.__sfOpsLevel && window.__sfOpsLevel(")
       and '"level": "alert"' in js and '"since": 5' in js, js)
+counting.engine.reset_rules()
+counting.engine.unmute()
+counting.sampler.values = {"disk_free_pct": 3.0}
+cclock.t += 300
+counting.step()
+got = json.loads(h.ops_state())
+check("ops_state: an alert, since is a whole number", got["level"] == "alert" and isinstance(got["since"], int) and "3%" in got["reason"], got)
+sm = counting.summary("en")
+check("summary: since and muted_until are whole numbers too", isinstance(sm["since"], int) and sm["muted_until"] is None, sm)
+h._ops_push({"level": "alert", "reason": "x", "since": 1800000300.7})
+check("the page gets since as a whole number", '"since": 1800000300}' in h._window.evaluate_js.call_args[0][0], h._window.evaluate_js.call_args[0][0])
+told = []
+counting.on_level = told.append
+counting.act("set_rule", {"id": "disk_low", "value": 8}, "en")
+check("changing the number of a running rule does not blink the TV to ok (it recovers on its readings)",
+      counting.state(cclock())["level"] == "alert" and told == [], (counting.state(cclock()), told))
+counting.act("reset_rules", {}, "en")
+check("nor does reset", counting.state(cclock())["level"] == "alert" and told == [])
+counting.sampler.values = {}
+counting.on_level = h._ops_push
 h.flag = False
 check("the flag turned off: the collector is stopped and the calls say off", json.loads(h.ops_state())["on"] is False and Counting.stopped == 1
       and json.loads(h.office_object_view("ops", "en"))["code"] == "off")
+check("turning the flag off tells the page the level is gone (the red dot)", '"level": "none"' in h._window.evaluate_js.call_args[0][0], h._window.evaluate_js.call_args[0][0])
+h.flag = True
+Counting.started = 0
+O.configure(False, tell=False)
+threads = [threading.Thread(target=h._ops_sync) for _ in range(8)]
+[t.start() for t in threads]
+[t.join() for t in threads]
+check("eight calls at once start the collector once", Counting.started == 1, Counting.started)
+h._window.evaluate_js.reset_mock()
 h._ops_shutdown()
+check("the app closing stops it without a call into the page", not O.enabled() and h._window.evaluate_js.call_count == 0)
 
 print("the thread")
 tclock_real = time.time

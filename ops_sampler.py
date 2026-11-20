@@ -87,9 +87,9 @@ def memory_parts(vm: dict, total: int) -> dict:
       Wired       = pages wired down                                  (the kernel's, cannot be paged out)
       Compressed  = pages occupied by the compressor                  (what the compressor's output takes)
       Cached      = file-backed pages + purgeable pages               (a program can give it back)
-    Memory used = App + Wired + Compressed; the rest of the total is cached or free. Activity Monitor
-    shows "Memory Used" the same way (App + Wired + Compressed); the figure was compared with it on one
-    Mac, not on every macOS version."""
+    Memory used = App + Wired + Compressed; the rest of the total is cached or free. This is the usual
+    reading of how Activity Monitor builds "Memory Used"; the numbers were NOT compared side by side with
+    Activity Monitor, so treat the split as an estimate."""
     page = vm.get("page", 16384)
     purge = vm.get("pages purgeable", 0)
     app = max(0, vm.get("anonymous pages", 0) - purge) * page
@@ -271,9 +271,9 @@ def read_cpu_ticks_mac():
 
 
 def _mac_core_layout():
-    """(performance cores, efficiency cores) on Apple Silicon, else (0, 0). On the M4 this was written on,
-    Activity Monitor-style load shows the efficiency cores as the first logical CPUs and the performance
-    cores as the last ones; that order was observed under load on that one machine."""
+    """(performance cores, efficiency cores) on Apple Silicon, else (0, 0). On the one Apple M4 this was
+    tried on, the efficiency cores were the first logical CPUs and the performance cores the last ones
+    (seen under load, once); other Apple Silicon parts were not checked."""
     p = _num((run(["sysctl", "-n", "hw.perflevel0.logicalcpu"], 2) or "").strip())
     e = _num((run(["sysctl", "-n", "hw.perflevel1.logicalcpu"], 2) or "").strip())
     return (int(p), int(e)) if p and e is not None else (0, 0)

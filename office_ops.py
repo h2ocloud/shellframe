@@ -327,8 +327,9 @@ class Collector:
             if self.sampler.kind == "none" or self.updated is None:
                 return {"level": "none", "reason": "", "since": None, "muted_until": None, "under": "none"}
             st = self.engine.status(now, lang)
-        return {"level": st["level"], "reason": st["reason"], "since": st["since"], "muted_until": st["muted_until"],
-                "under": st["under"], "rule": st["rule"]}
+        whole = (lambda v: None if v is None else int(v))              # epoch seconds, whole
+        return {"level": st["level"], "reason": st["reason"], "since": whole(st["since"]),
+                "muted_until": whole(st["muted_until"]), "under": st["under"], "rule": st["rule"]}
 
     def summary(self, lang) -> dict:
         now = self.clock()
@@ -570,6 +571,7 @@ class Ops(oo.OfficeObject):
 _enabled = False
 _collector = None
 _cl = threading.Lock()
+_cfg_lock = threading.Lock()          # configure() only; collector() takes _cl
 
 
 def collector() -> Collector:
@@ -591,20 +593,29 @@ def enabled() -> bool:
     return _enabled
 
 
-def configure(on, on_level=None) -> None:
+def configure(on, on_level=None, tell=True) -> None:
     """Make the collector match `settings.experimental_ops`: started while on, stopped (and the record written)
-    when it goes off. Cheap to call again with the same value."""
+    when it goes off, and (`tell`) the page told the level is gone; the app's exit passes tell=False. Cheap to call again with the same value; two
+    callers at once (the page's calls run on a thread each) cannot start two collectors."""
     global _enabled
     on = bool(on)
-    if on:
-        c = collector()
-        if on_level is not None:
-            c.on_level = on_level
-        _enabled = True
-        c.start()
-    elif _enabled or _collector is not None and _collector.running:
+    with _cfg_lock:
+        if on:
+            c = collector()
+            if on_level is not None:
+                c.on_level = on_level
+            _enabled = True
+            c.start()
+            return
+        was = _enabled or (_collector is not None and _collector.running)
         _enabled = False
-        if _collector is not None:
-            _collector.stop()
-    else:
-        _enabled = False
+        c = _collector
+        if c is not None and was:
+            c.stop()
+    if c is not None and was and tell and c.on_level:
+        try:
+            c.on_level({"level": "none", "reason": "", "since": None})      # the sidebar's red dot goes with the switch
+        except Exception:
+            _swallow("office_ops.configure")
+        with c._lock:
+            c._pushed = None

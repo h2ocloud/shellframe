@@ -178,6 +178,13 @@ e15.set_rule("mem_pressure_high", value=2)
 for n in range(0, 2):
     e15.feed(smp(pressure="critical"), T0 + n * MIN)
 check("a smaller number makes it fire sooner", [x.rule for x in e15.feed(smp(pressure="critical"), T0 + 2 * MIN)] == ["mem_pressure_high"])
+e16 = R.Engine()
+e16.feed(smp(disk_free_pct=5.0), T0)
+e16.set_rule("disk_low", value=8)
+check("changing a running rule's number keeps its event (it ends on its readings, so the TV does not blink)",
+      e16.status(T0)["level"] == "alert" and e16.status(T0)["since"] == T0)
+e16.reset_rules()
+check("reset keeps a running event of a rule that is on by default", e16.status(T0)["level"] == "alert")
 e15.reset_rules()
 check("reset puts the defaults back", e15.cfg["mem_pressure_high"]["value"] == 10 and e15.cfg["net_down"]["on"] is False)
 

@@ -120,17 +120,15 @@ class Engine:
             c["on"] = on
         if value is not None:
             c["value"] = clamp_value(rule_id, value)
-        st = self._st[rule_id]
         if not c["on"]:
-            self._st[rule_id] = self._blank()
-        else:                                # judge again under the new number; the first over-the-line time stays
-            st["active"], st["ok"] = False, 0
-        return True
+            self._st[rule_id] = self._blank()         # switched off: its event ends at once
+        return True                                   # a running event goes on until the readings recover under the new number
 
     def reset_rules(self) -> None:
         for s in SPECS:
             self.cfg[s[0]] = {"on": s[2], "value": s[3]}
-        self._st = {i: self._blank() for i in IDS}
+            if not s[2]:
+                self._st[s[0]] = self._blank()
 
     def mute(self, minutes, now) -> float:
         self.muted_until = now + max(1, min(24 * 60, int(minutes))) * 60

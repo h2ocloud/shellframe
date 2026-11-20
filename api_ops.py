@@ -49,7 +49,7 @@ class OpsApiMixin:
 
     def _ops_shutdown(self) -> None:
         try:
-            office_ops.configure(False)
+            office_ops.configure(False, tell=False)           # the app is closing: no call into the page
         except Exception:
             _swallow("ops:shutdown")
 
@@ -58,8 +58,9 @@ class OpsApiMixin:
         win = getattr(self, "_window", None)
         if not win:
             return
+        since = snap.get("since")
         payload = json.dumps({"level": snap.get("level"), "reason": snap.get("reason") or "",
-                              "since": snap.get("since")}, ensure_ascii=False)
+                              "since": int(since) if isinstance(since, (int, float)) else None}, ensure_ascii=False)
         try:
             win.evaluate_js(f"window.__sfOpsLevel && window.__sfOpsLevel({payload})")
         except Exception:
@@ -83,7 +84,9 @@ class OpsApiMixin:
         if not self._ops_sync():
             return self._ops_json({"on": False, "level": "none", "reason": "", "since": None})
         st = office_ops.collector().state()
-        return self._ops_json({"on": True, "level": st["level"], "reason": st["reason"], "since": st["since"]})
+        since = st["since"]
+        return self._ops_json({"on": True, "level": st["level"], "reason": st["reason"],
+                               "since": int(since) if since is not None else None})
 
     def office_object_view(self, obj_id: str, lang: str = "") -> str:
         off = self._ops_off(lang)
