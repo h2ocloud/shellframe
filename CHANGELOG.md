@@ -67,6 +67,17 @@
 
 ### Changes
 
+- **Closing a person's panel in the office keeps the view where it is.**
+  Reported with a screenshot: clicking a person zooms in and opens their panel, but the only ways out were Esc and
+  Stop following, and both zoomed back out to the whole floor, so picking someone nearby meant finding the spot again.
+  Stop following, Esc and a new ✕ at the panel's top right now close the panel and leave the camera where it is; the
+  Whole floor button still shows everything. Clicking someone else while following moves over to them without zooming
+  out. Covered by `tests_office_follow_ui.py`.
+
+  **在辦公室收起人物面板時，畫面停在原處。** 回報（附截圖）：點一個人會拉近並打開他的面板，但只能用 Esc 或「停止追蹤」離開，而且兩者都會縮回
+  整層，要選附近的人得重新找位置。現在「停止追蹤」、Esc 和面板右上角新加的 ✕ 都只收起面板，鏡頭留在原處；要看全部仍按「全景」。跟拍時直接
+  點別人，鏡頭會移過去，不先縮回。由 `tests_office_follow_ui.py` 守著。
+
 - **Room signs keep clear of the furniture.**
   Reported with a screenshot: with a paired computer's room arranged behind the lobby, its sign lay over the lobby's
   whiteboard and calendar. Every room's sign now keeps clear of any room's whiteboard, calendar, TV, bookshelf and
