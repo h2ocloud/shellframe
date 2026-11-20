@@ -6,6 +6,34 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.63.0 (2026-11-20)
+
+### Added
+
+- **The ops board shows CPU and GPU temperatures.**
+  Asked for: the temperatures of a computer next to its CPU, memory, network and disk. On Linux the CPU temperature
+  comes from the kernel's sensors, most specific first (coretemp, k10temp and the like, then a CPU thermal zone, then
+  the ACPI zone), leaving out drives, Wi-Fi and batteries; the detail window names the source. With an NVIDIA card and
+  `nvidia-smi`, on Linux or Windows, each GPU's temperature, use, memory (or "shared memory" on a machine where the GPU
+  shares it) and power are read on the full readings, at most every 10 seconds. macOS has no way to read them without
+  administrator rights, and neither has the CPU on Windows, so those say so instead of asking for rights. The TVs
+  (this computer's and the paired computers') add a line "CPU 46° · GPU 43°", the detail window a Temperatures section
+  with the last 30 minutes, and the record of the last 24 hours keeps both. Two rules are added: the CPU above 90 °C
+  or a GPU above 85 °C for 5 minutes is an alert; the degrees can be changed (50 to 120) and either can be switched off.
+  Why those numbers: most desktop and laptop CPUs start slowing down at 95–105 °C, and NVIDIA's consumer cards at about
+  83–87 °C (their slowdown temperature). Nothing new is installed; a value that cannot be read shows "—". Covered by
+  `tests_ops_sampler.py`, `tests_ops_rules.py`, `tests_ops_object.py`, `tests_office_ops_ui.py` and
+  `tests_office_peer_ops_ui.py`.
+
+  **維運戰情顯示 CPU 和 GPU 溫度。** 需求：在 CPU、記憶體、網路、磁碟旁邊看到電腦的溫度。Linux 的 CPU 溫度從系統的感測器讀，越專一的越先用
+  （coretemp、k10temp 這類，再來是 CPU 的 thermal zone，最後是 ACPI zone），硬碟、Wi-Fi、電池的感測器不算；詳細畫面會寫出來源。有 NVIDIA 顯示卡
+  和 `nvidia-smi` 的電腦（Linux 或 Windows），每張卡的溫度、使用率、記憶體（GPU 和 CPU 共用記憶體的機器顯示「共用記憶體」）和功耗，在完整取樣時讀，
+  最多每 10 秒一次。macOS 不用管理員權限讀不到，Windows 的 CPU 也一樣，這些會直接寫出讀不到，不去要權限。電視（這台的和配對電腦的）多一行
+  「CPU 46° · GPU 43°」，詳細畫面多一節「溫度」，含最近 30 分鐘；24 小時紀錄也存兩者。新增兩條規則：CPU 超過 90°C 或 GPU 超過 85°C 連續 5 分鐘
+  算異常；度數可以改（50 到 120），也可以關掉。為什麼是這兩個數字：多數桌機和筆電的 CPU 在 95–105°C 開始降速，NVIDIA 消費級顯示卡約 83–87°C
+  （它的降速溫度）。不裝新東西；讀不到的值顯示「—」。由 `tests_ops_sampler.py`、`tests_ops_rules.py`、`tests_ops_object.py`、
+  `tests_office_ops_ui.py`、`tests_office_peer_ops_ui.py` 守著。
+
 ## v0.62.1 (2026-11-20)
 
 ### Fixes

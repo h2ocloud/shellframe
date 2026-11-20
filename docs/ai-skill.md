@@ -20,8 +20,8 @@ sfctl version
 ```
 
 ```
-OK ShellBot v0.62.1
-   version: 0.62.1
+OK ShellBot v0.63.0
+   version: 0.63.0
    experimental: {"experimental_a2a": true, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false, "experimental_office": false}
 ```
 
@@ -729,6 +729,7 @@ sfctl deliver show N
 | `sfctl deliver add <path-or-url> --title … [--note …] [--task N]` / `list` / `show N` (§4.11): files and links handed to the person, kept as references on the bot's or tab's desk in the office; the 「交付物」 button, a section of 「待你決定」 and a paperclip in the sidebar; a bot's system prompt says to register what it hands over; the person's 請他改 reaches the bot as 「（交付物）請改…」 | 0.60.0 |
 | No new commands: the office's ops TV (`experimental_ops`, off by default, §4.10): this computer's CPU, memory, network and disk on the lobby wall, red on a lasting problem, one system notification per alert, rules in `ops.json`; the page's `office_object_view` / `office_object_live` / `ops_state` | 0.61.0 |
 | No new commands: the office's 整理位置 (arrange the paired computers' rooms around this one, kept in the office preferences' `arrange`); the ops board on paired computers (a small TV in each paired room, its detail window read-only, over the signed `/link/ops`, `/link/ops/view`, `/link/ops/live`); ops sampling on Windows; room signs keep clear of the furniture | 0.62.0 |
+| No new commands: the ops board shows CPU and GPU temperatures (Linux sysfs; NVIDIA through `nvidia-smi` on Linux and Windows; macOS and the Windows CPU are not read), on the TVs, a Temperatures section in the detail window, and two rules (CPU above 90 °C, GPU above 85 °C, for 5 minutes; the degrees can be changed) | 0.63.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to
