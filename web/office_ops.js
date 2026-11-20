@@ -97,7 +97,7 @@
       x.fillStyle = 'rgba(192,202,245,.5)'; x.font = `500 ${Math.min(13, H * .17)}px ${FONT}`; x.fillText(tr('Ops is not measured here', '這台電腦沒有在量維運'), FW / 2, H * .68);
       return;
     }
-    const bad = lv === 'alert', compact = H < 96;
+    const bad = lv === 'alert', compact = H < 80;
     const reason = st.reason || (bad ? tr('Something is wrong', '出了問題') : tr('Needs a look', '需要留意'));
     if (compact && (bad || lv === 'warn')) {                         // the flat view: a short, wide screen: the banner is all of it
       x.fillStyle = bad ? `rgba(224,60,84,${.82 + .18 * pulse})` : 'rgba(224,175,104,.94)'; x.fillRect(0, 0, FW, H);
@@ -175,7 +175,7 @@
   }
   function drawMini(x, st, g, H) {
     const tr = g.tr, FONT = g.FONT, lv = st.level, pal = PAL[lv], f = st.face, bad = lv === 'alert', warn = lv === 'warn', dim = lv === 'muted';
-    const pulse = g.rm ? 1 : .6 + .4 * Math.sin(g.T * 3.2), compact = H < 96, hh = Math.round(H * (bad || warn ? .3 : .24));
+    const pulse = g.rm ? 1 : .6 + .4 * Math.sin(g.T * 3.2), compact = H < 80, hh = Math.round(H * (bad || warn ? .3 : .24));
     x.fillStyle = pal.bg; x.fillRect(0, 0, FW, H); x.textBaseline = 'middle'; x.textAlign = 'left';
     if (st.gray) {
       x.fillStyle = '#6b7399'; x.beginPath(); x.arc(15, hh / 2 + 2, 5, 0, 6.3); x.fill();
