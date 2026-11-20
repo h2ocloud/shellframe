@@ -45,7 +45,7 @@ Terminal-based AI assistants can't receive screenshots from your clipboard. Shel
 | **Two-tier reload** | UI changes → hot reload. Python changes → full restart with session preservation notice. |
 | **Cross-platform** | macOS (WKWebView), Windows (Edge WebView2), Linux (GTK WebView). |
 | **Auto-update** | Startup check + one-click update. TG `/update` and `/update_now` for remote management. |
-| **i18n** | English + 繁體中文. Auto-detects OS language. The main window (settings, sidebar, pairing and remote maintenance, usage, accounts) and most of the office follow it; text sent to bots and Telegram is unchanged. |
+| **i18n** | English + 繁體中文; choose in Settings → General → Language. The main window (settings, sidebar, pairing and remote maintenance, usage, accounts) and most of the office follow it; text sent to bots and Telegram is unchanged. |
 
 <details>
 <summary>繁體中文</summary>
@@ -85,7 +85,7 @@ Terminal-based AI assistants can't receive screenshots from your clipboard. Shel
 | **兩段式重載** | 改介面 → 熱重載；改 Python → 完整重啟並提示分頁已保留。 |
 | **跨平台** | macOS（WKWebView）、Windows（Edge WebView2）、Linux（GTK WebView）。 |
 | **自動更新** | 啟動時檢查，一鍵更新。Telegram 用 `/update`、`/update_now` 遠端管理。 |
-| **多語系** | 英文＋繁體中文，依作業系統語言自動切換。主視窗（設定、側欄、配對與遠端維護、用量、帳號）和大部分辦公室都跟著走；送給 bot 和 Telegram 的字不變。 |
+| **多語系** | 英文＋繁體中文，在設定 →「一般」→「語言」切換。主視窗（設定、側欄、配對與遠端維護、用量、帳號）和大部分辦公室都跟著走；送給 bot 和 Telegram 的字不變。 |
 
 </details>
 
