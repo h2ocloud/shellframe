@@ -1414,6 +1414,8 @@ class RemoteApiMixin:
             return self._bots_link(args)
         elif cmd == "tasks_link":                     # GET /link/tasks: this machine's task lists (api_tasks)
             return self._tasks_for_peer(args)
+        elif cmd in ("ops", "ops_view", "ops_live"):      # GET /link/ops, /link/ops/view, POST /link/ops/live (link_ops)
+            return self._link_ops(cmd, args)
         elif cmd == "bots_keep":
             return self._bots_link_keep(args)
         elif cmd == "bots_migrate":

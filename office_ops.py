@@ -21,7 +21,8 @@ What it keeps (the state folder, never the office's own `office.json`, which the
   `ops_history.json`  24 hours, 288 points, one per 5 minutes: time, CPU, memory %, pressure, swap, free disk %,
                       network speeds, route. Written every 30 minutes and when the collector stops. Per core
                       numbers and the top five are only ever the newest reading, never kept.
-  Nothing is sent anywhere.
+  Nothing is sent anywhere on its own; a paired computer may read the summary and the detail screen and keep it
+  awake (2 s readings) over Frame Link (link_ops.py: `/link/ops`, `/link/ops/view`, `/link/ops/live`).
 
 A system notification is sent once per alert event, when it starts (not while muted, not on recovery).
 Plugins do not get a collector or `office_view` in this version: only this built-in object has them.
@@ -161,7 +162,7 @@ class Collector:
         self.top_sort = TOP_SORT_DEFAULT
         self.top_t = 0.0
         self.updated = None
-        self._live_until = 0.0
+        self._live = {}                         # who is looking → until when: "" is this computer's own window, any other key a paired computer's
         self._last_t = 0.0
         self._last_full_t = 0.0
         self._last_hist_t = 0.0
@@ -211,20 +212,28 @@ class Collector:
     # ── the schedule ──
     def interval(self, now) -> float:
         with self._lock:
-            if now < self._live_until:
+            if self._live and now < max(self._live.values()):
                 return LIVE_S
             return WATCH_S if self.engine.pending() else NORMAL_S
 
-    def live(self, on, now=None) -> None:
-        """The detail screen is open (`on`) or closed. An open one must say so again within LIVE_TIMEOUT_S."""
+    def live(self, on, now=None, who="") -> None:
+        """The detail screen is open (`on`) or closed. An open one must say so again within LIVE_TIMEOUT_S. `who` keeps each
+        looker apart (a paired computer's window and this one's own): one closing does not end the other's."""
         now = self.clock() if now is None else now
         with self._lock:
-            self._live_until = now + LIVE_TIMEOUT_S if on else 0.0
+            if on:
+                self._live[who] = now + LIVE_TIMEOUT_S
+                if len(self._live) > 16:                 # a peer that went away without saying so: only the newest few stay
+                    for k in sorted(self._live, key=self._live.get)[:-16]:
+                        del self._live[k]
+            else:
+                self._live.pop(who, None)
         self._wake.set()
 
     def is_live(self, now=None) -> bool:
         now = self.clock() if now is None else now
-        return now < self._live_until
+        live = self._live
+        return bool(live) and now < max(live.values())
 
     def start(self):
         if self.running:
@@ -431,7 +440,9 @@ class Collector:
             out.append(cell)
         return out
 
-    def view(self, lang) -> dict:
+    def view(self, lang, sort=None) -> dict:
+        """The detail screen. `sort` (one of TOP_SORTS) shows the top five in that order for this answer only (a paired
+        computer's window; this computer's own order is the saved one)."""
         now = self.clock()
         zh = lang == "zh"
         t = (lambda en, zhs: zhs if zh else en)
@@ -441,7 +452,7 @@ class Collector:
             recent = list(self.recent)
             history = list(self.history)
             top = {k: list(v) for k, v in self.top.items()}
-            top_sort = self.top_sort
+            top_sort = sort if sort in TOP_SORTS else self.top_sort
             cfg = {k: dict(v) for k, v in self.engine.cfg.items()}
             rise = self.engine.swap_rise
             active = {a["rule"] for a in self.engine.active()}

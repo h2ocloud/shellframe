@@ -326,7 +326,10 @@ def _widget(w):
                           "value": _vnum(r.get("value")), "unit": _name(r.get("unit"), 30),
                           "level": r.get("level") if r.get("level") in ("warn", "alert") else "warn",
                           "min": _vnum(r.get("min")), "max": _vnum(r.get("max")), "step": _vnum(r.get("step")) or 1})
-    return {"kind": "rules", "items": items}
+    out = {"kind": "rules", "items": items}
+    if w.get("readonly") is True:                        # a paired computer's rules: shown, not changed from here
+        out["readonly"] = True
+    return out
 
 
 def clean_view(raw) -> dict:
