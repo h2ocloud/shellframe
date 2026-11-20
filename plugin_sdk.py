@@ -25,6 +25,10 @@ Hooks (override in subclass; all optional, all best-effort):
                                   declare it in manifest.json as `office_objects`, answer these four.
                                   Called only while the plugin is enabled and the office is open,
                                   each with a 3 s limit; the answers are masked and capped by the host.
+                                  Not offered to a plugin in this version: `office_view` (a detail screen of
+                                  widgets: gauge, bars, stack, spark, strip, table, stat, rules) and a
+                                  background collector. Only the built-in ops TV has them (office_ops.py); they
+                                  may be opened to plugins later.
 
 The host (main.py) calls these in best-effort try/except blocks so a buggy
 plugin never crashes the app.

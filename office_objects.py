@@ -36,6 +36,11 @@ a broken or stuck object makes only its own popup say "not available now"):
         in); `confirm` makes the popup ask yes/no first; `refresh` makes it read the list again; `go`
         navigates the page. An action declared with `input` first asks the person for one line (args.text)
 
+A built-in object may also answer `visible()` (False while its own switch is off: not in the registry) and
+`view(ctx)`, a detail screen as widgets (`WIDGET_KINDS`, cleaned by `clean_view`), and its summary may carry a
+`level` / `reason` / `since` / `face` for a TV on the wall (`clean_summary`). Plugins have neither in this
+version: no `office_view`, no collector (the ops TV, office_ops.py, is the only one).
+
 What the host does to every answer (so no object can forget it): strings are cut to a length,
 anything that looks like a secret is masked (`redact_text`: line by line, Markdown stays
 Markdown), a list is capped, the page's language picks each {en, zh} text. An `item_id` comes
@@ -54,7 +59,7 @@ import threading
 import agent_status
 
 HOOK_TIMEOUT = 3.0           # seconds a hook may take before the popup says it is not available
-FURNITURE = ("bookshelf", "cabinet", "noticeboard", "mailbox", "generic")
+FURNITURE = ("bookshelf", "cabinet", "noticeboard", "mailbox", "tv", "generic")
 PLACES = ("lobby:wall", "lobby:near-primary", "button")     # `zone:<id>` stands where lobby:wall does; "button" has no furniture, only the toolbar button
 OBJECTS_MAX = 12
 LIST_MAX = 400               # entries one answer may carry
@@ -72,6 +77,8 @@ _WORDS = {
     "unknown": ("There is no such object.", "沒有這個物件。"),
     "not_found": ("That entry is gone.", "這一筆已經不在了。"),
     "bad_action": ("That action is not available here.", "這裡沒有這個動作。"),
+    "off": ("This is switched off.", "這個功能沒有打開。"),
+    "no_view": ("This object has no detail screen.", "這個物件沒有詳細畫面。"),
 }
 
 
@@ -200,11 +207,43 @@ def normalize_declaration(raw, lang="en"):
 
 
 # ── what comes back from a hook ──────────────────────────────────────────────
+LEVELS = ("ok", "warn", "alert", "none", "muted")
+PRESSURES = ("normal", "warn", "critical")
+FACE_RANGES = {"cpu": (0, 100), "mem": (0, 100), "disk_free_pct": (0, 100), "net_in": (0, 1e12), "net_out": (0, 1e12)}
+
+
+def _fnum(v, lo, hi):
+    """A finite number clamped to lo..hi, else None (a bool, a string and NaN are not numbers)."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or v in (float("inf"), float("-inf")):
+        return None
+    return max(lo, min(hi, v))
+
+
+def _clean_face(raw) -> dict:
+    """The ops TV's gauges: only the keys the office draws, each number clamped, `spark` at most 12 numbers."""
+    raw = raw if isinstance(raw, dict) else {}
+    face = {k: _fnum(raw.get(k), *FACE_RANGES[k]) for k in FACE_RANGES}
+    face["pressure"] = raw.get("pressure") if raw.get("pressure") in PRESSURES else None
+    face["online"] = raw["online"] if isinstance(raw.get("online"), bool) else None
+    face["spark"] = [v for v in (_fnum(x, 0, 100) for x in (raw.get("spark") or [])[-12:]
+                                 if isinstance(raw.get("spark"), (list, tuple))) if v is not None]
+    return face
+
+
 def clean_summary(raw) -> dict:
     """The badge and hint, and (an object that has one per person) `by_owner`: {key: {label, count, new, types, closed}},
-    which the office draws on each person's desk, and `by_task`: {task id: count}."""
+    which the office draws on each person's desk, and `by_task`: {task id: count}. An object that has a face to show
+    (the ops TV) adds `level` (one of LEVELS), `reason` (a line, masked), `since` / `muted_until` / `updated` (epoch
+    seconds or null) and `face`; they are kept only when the object gave them."""
     raw = raw if isinstance(raw, dict) else {}
     out = {"badge": max(0, min(999, _num(raw.get("badge")))), "hint": _name(raw.get("hint"), 120)}
+    if "level" in raw:
+        out["level"] = raw["level"] if raw["level"] in LEVELS else "none"
+        out["reason"] = _name(raw.get("reason"), 120)
+        for k in ("since", "muted_until", "updated"):
+            v = _fnum(raw.get(k), 0, 4e9)
+            out[k] = int(v) if v is not None else None
+        out["face"] = _clean_face(raw.get("face"))
     if isinstance(raw.get("by_owner"), dict):
         by = {}
         for key, v in list(raw["by_owner"].items())[:400]:
@@ -216,6 +255,79 @@ def clean_summary(raw) -> dict:
     if isinstance(raw.get("by_task"), dict):
         out["by_task"] = {_ident(k, 20): max(0, _num(v)) for k, v in list(raw["by_task"].items())[:400]}
     return out
+
+
+# ── a detail screen's widgets (`office_object_view`): eight kinds, drawn by the office ──
+WIDGET_KINDS = ("gauge", "bars", "stack", "spark", "strip", "table", "stat", "rules")
+STRIP_CELLS = ("ok", "warn", "alert", "none")
+SECTIONS_MAX, WIDGETS_MAX, POINTS_MAX = 12, 12, 600
+
+
+def _vnum(v):
+    return _fnum(v, -1e15, 1e15)
+
+
+def _vtone(v):
+    return v if v in TONES else ""
+
+
+def _widget(w):
+    """One widget as the page may take it, or None (an unknown kind is dropped, not an error)."""
+    if not isinstance(w, dict) or w.get("kind") not in WIDGET_KINDS:
+        return None
+    kind, label = w["kind"], _name(w.get("label"), 80)
+    if kind == "gauge":
+        return {"kind": kind, "label": label, "value": _fnum(w.get("value"), 0, 100), "text": _name(w.get("text"), 20),
+                "tone": _vtone(w.get("tone"))}
+    if kind == "bars":
+        items = [{"label": _name(i.get("label"), 12), "value": _fnum(i.get("value"), 0, 100),
+                  "group": _name(i.get("group"), 8)} for i in (w.get("items") or [])[:128] if isinstance(i, dict)]
+        return {"kind": kind, "label": label, "items": items}
+    if kind == "stack":
+        parts = [{"label": _name(i.get("label"), 30), "value": max(0, _vnum(i.get("value")) or 0), "tone": _vtone(i.get("tone"))}
+                 for i in (w.get("parts") or [])[:8] if isinstance(i, dict)]
+        return {"kind": kind, "label": label, "total": max(0, _vnum(w.get("total")) or 0), "parts": parts}
+    if kind == "spark":
+        series = [{"label": _name(s.get("label"), 30), "tone": _vtone(s.get("tone")),
+                   "values": [_vnum(x) for x in (s.get("values") or [])[:POINTS_MAX]]}
+                  for s in (w.get("series") or [])[:4] if isinstance(s, dict)]
+        return {"kind": kind, "label": label, "unit": _name(w.get("unit"), 12), "max": _vnum(w.get("max")), "series": series}
+    if kind == "strip":
+        return {"kind": kind, "label": label, "start": int(_fnum(w.get("start"), 0, 4e9) or 0),
+                "step_s": int(_fnum(w.get("step_s"), 1, 86400) or 1),
+                "cells": [c if c in STRIP_CELLS else "none" for c in (w.get("cells") or [])[:POINTS_MAX]]}
+    if kind == "table":
+        return {"kind": kind, "columns": [_name(c, 30) for c in (w.get("columns") or [])[:6]],
+                "rows": [[_name(c, 80) for c in r[:6]] for r in (w.get("rows") or [])[:20] if isinstance(r, (list, tuple))]}
+    if kind == "stat":
+        return {"kind": kind, "label": label, "value": _name(w.get("value"), 40), "sub": _name(w.get("sub"), 120),
+                "tone": _vtone(w.get("tone"))}
+    items = []
+    for r in (w.get("items") or [])[:20]:
+        if isinstance(r, dict) and _ID.fullmatch(str(r.get("id") or "")):
+            items.append({"id": r["id"], "label": _name(r.get("label"), 120), "on": bool(r.get("on")),
+                          "value": _vnum(r.get("value")), "unit": _name(r.get("unit"), 30),
+                          "level": r.get("level") if r.get("level") in ("warn", "alert") else "warn",
+                          "min": _vnum(r.get("min")), "max": _vnum(r.get("max")), "step": _vnum(r.get("step")) or 1})
+    return {"kind": "rules", "items": items}
+
+
+def clean_view(raw) -> dict:
+    """What `office_object_view` answers: a title, a banner, and sections of widgets (WIDGET_KINDS only), every text
+    cut and masked and every number a plain finite number. The caller adds `success`."""
+    raw = raw if isinstance(raw, dict) else {}
+    ban = raw.get("banner") if isinstance(raw.get("banner"), dict) else {}
+    since = _fnum(ban.get("since"), 0, 4e9)
+    sections = []
+    for sec in (raw.get("sections") or [])[:SECTIONS_MAX]:
+        if isinstance(sec, dict) and _ID.fullmatch(str(sec.get("id") or "")):
+            widgets = [x for x in (_widget(w) for w in (sec.get("widgets") or [])[:WIDGETS_MAX]) if x]
+            sections.append({"id": sec["id"], "title": _name(sec.get("title"), 60), "widgets": widgets})
+    refresh = _fnum(raw.get("refresh_ms"), 500, 60000)
+    return {"refresh_ms": int(refresh) if refresh else 2000, "title": _name(raw.get("title"), 60),
+            "banner": {"level": ban.get("level") if ban.get("level") in LEVELS else "none", "text": _name(ban.get("text"), 160),
+                       "since": int(since) if since is not None else None, "rule": _name(ban.get("rule"), 40)},
+            "sections": sections}
 
 
 def clean_list(raw, lang="en") -> dict:
@@ -371,6 +483,10 @@ class OfficeObject:
     def id(self) -> str:
         return str(self.declaration.get("id") or "")
 
+    def visible(self) -> bool:
+        """False while the object's own switch is off (the ops TV): it is then not in the registry at all."""
+        return True
+
     def summary(self, ctx) -> dict:
         return {"badge": 0}
 
@@ -379,6 +495,10 @@ class OfficeObject:
 
     def item(self, ctx, item_id) -> dict:
         return {}
+
+    def view(self, ctx):
+        """A detail screen as widgets (`office_object_view`), or None: an object without one. Built-ins only."""
+        return None
 
     def action(self, ctx, item_id, action_id, args) -> dict:
         return {"ok": False}
@@ -441,7 +561,7 @@ class Registry:
         self.plugins = plugins or (lambda: [])      # -> the enabled plugins (SFPlugin instances)
 
     def objects(self) -> dict:
-        found = {o.id: o for o in self.builtins if o.id}
+        found = {o.id: o for o in self.builtins if o.id and o.visible()}
         try:
             plugins = list(self.plugins() or [])
         except Exception:
@@ -494,6 +614,20 @@ class Registry:
             return {"success": False, "code": "not_found", "message": words("not_found", lang)}
         decl = normalize_declaration(obj.declaration, lang) or {}
         return {"success": True, "item": clean_item(res, decl.get("actions") or [])}
+
+    def view(self, obj_id, ctx, lang) -> dict:
+        """A built-in object's detail screen as widgets, cleaned. A plugin's object has none in this version."""
+        obj = self.objects().get(str(obj_id))
+        if obj is None:
+            return {"success": False, "code": "unknown", "message": words("unknown", lang)}
+        if isinstance(obj, PluginObject) or type(obj).view is OfficeObject.view:
+            return {"success": False, "code": "no_view", "message": words("no_view", lang)}
+        ok, res = call_limited(obj.view, ctx)
+        if not ok:
+            return {"success": False, "code": res, "message": words(res, lang)}
+        if not isinstance(res, dict) or res.get("success") is False:
+            return {"success": False, "code": "unavailable", "message": words("unavailable", lang)}
+        return dict(clean_view(res), success=True)
 
     def action(self, obj_id, ctx, lang, item_id, action_id, args) -> dict:
         obj = self.objects().get(str(obj_id))
