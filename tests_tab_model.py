@@ -34,9 +34,11 @@ from unittest.mock import MagicMock
 HERE = Path(__file__).resolve().parent
 TMP = Path(tempfile.mkdtemp(prefix="sf-tabmodel-"))
 os.environ["SHELLFRAME_PROMPT_LANG"] = "en"
+os.environ["HOME"] = str(TMP / "home")
 os.environ["SHELLFRAME_BOTS_DIR"] = str(TMP / "bots")
 os.environ["PI_CODING_AGENT_DIR"] = str(TMP / "pi")         # no models.json here: pi lists nothing
 os.environ["CODEX_HOME"] = tempfile.mkdtemp()                # no models_cache.json: Codex lists the table here
+os.environ["SHELLFRAME_CONFIG_DIR"] = str(TMP / "shellframe-config")
 sys.modules["webview"] = MagicMock()
 bt = MagicMock()
 bt.load_user_instructions.return_value = ""

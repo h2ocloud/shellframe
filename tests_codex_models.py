@@ -24,7 +24,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 HOME = Path(tempfile.mkdtemp(prefix="sf-codex-models-"))
+os.environ["HOME"] = str(HOME)
 os.environ["CODEX_HOME"] = str(HOME)
+os.environ["SHELLFRAME_CONFIG_DIR"] = str(HOME / "shellframe-config")
 os.environ["PI_CODING_AGENT_DIR"] = tempfile.mkdtemp()
 
 import agent_model  # noqa: E402
