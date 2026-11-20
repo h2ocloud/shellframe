@@ -6,6 +6,70 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.61.0 (2026-11-20)
+
+### Added
+
+- **The office's ops board: this computer's CPU, memory, network and disk on a TV in the lobby (experimental, off by default).**
+  Settings → Office → Ops board turns it on. A TV on the lobby's back wall, behind the primary bot's desk, shows three
+  small gauges (CPU, memory, network) and the free disk; it turns yellow for a warning and red, with a banner saying why,
+  when something stays wrong. Clicking the TV, or the Ops button at the bottom right, opens the detail window: every core
+  (performance and efficiency cores apart), the last 60 seconds of CPU, memory split into apps, wired, compressed and
+  cache, memory pressure for the last 30 minutes and the last 24 hours, swap, download and upload speed, the free disk,
+  the five programs using the most CPU (their names only), and the rules. Default rules: memory pressure high for 10
+  minutes or the free disk under 10% is an alert; memory pressure at warning for 30 minutes or swap growing by more than
+  2 GB in 30 minutes is a warning; CPU above 90% for 5 minutes is an alert; no network route for 2 minutes is a warning and
+  starts switched off, since laptops are often offline. Each rule can be switched off or given another number, and an
+  alert can be muted for an hour. When an alert begins, the computer shows one system notification and the sidebar's
+  Office button gets a red dot, so it is seen with the office closed.
+  With the detail window closed it reads every 5 minutes (measured on macOS: about 11 ms of CPU per reading) and every 30
+  seconds while a rule is over its line, to tell how long it has lasted; with the window open, every 2 seconds (about 2%
+  of one core, measured). It runs no new package, reads no file contents and sends nothing anywhere; the last 24 hours
+  stay on this computer. macOS is measured; Linux reads the same values from `/proc` and has been tried on recorded
+  output only; Windows shows "not supported yet". Covered by `tests_ops_rules.py`, `tests_ops_sampler.py`,
+  `tests_ops_object.py`, `tests_office_ops_ui.py`, and the furniture check in `tests_office_furniture_ui.py`.
+
+  **辦公室的維運戰情：大廳的電視顯示這台電腦的 CPU、記憶體、網路、磁碟（實驗性，預設關）。** 在「設定 → 辦公室 → 維運戰情」打開。
+  大廳後牆、主要 bot 桌子後面多一台電視：CPU、記憶體、網路三個小儀表，加上磁碟剩多少；出現注意事項變黃，持續異常時變紅，橫幅寫原因。
+  點電視或右下角「維運」鈕打開詳細畫面：每顆核心（效能核、節能核分開）、最近 60 秒的 CPU、記憶體分成 App／固定／壓縮／快取、最近
+  30 分鐘和 24 小時的記憶體壓力、交換區、下載與上傳速度、磁碟剩餘、CPU 用最多的前 5 個程式（只有名稱），以及規則。預設規則：記憶體
+  壓力「高」連續 10 分鐘、磁碟剩不到 10% 算異常；記憶體壓力「警告」連續 30 分鐘、交換區 30 分鐘增加超過 2 GB 算注意；CPU 全部核心
+  超過 90% 連續 5 分鐘算異常；連續 2 分鐘沒有對外網路算注意，預設關，因為筆電常常離線。每條規則都能關掉或改數字，異常可以靜音一小時。
+  異常開始時送一則系統通知，側欄的「辦公室」鈕也會出現紅點，辦公室沒開也看得到。
+  詳細畫面沒開時每 5 分鐘量一次（macOS 實測每次約 11 毫秒 CPU），有規則超線時改成每 30 秒看一次，用來判斷持續多久；畫面開著時每 2
+  秒一次（實測約一顆核心的 2%）。不裝新套件、不讀檔案內容、不送出任何東西，最近 24 小時的紀錄只留在這台電腦。macOS 有實測；Linux
+  從 `/proc` 讀同樣的值，只用錄下來的輸出測過；Windows 顯示「這個系統還不支援」。由 `tests_ops_rules.py`、`tests_ops_sampler.py`、
+  `tests_ops_object.py`、`tests_office_ops_ui.py` 和 `tests_office_furniture_ui.py` 的家具檢查守著。
+
+### Fixes
+
+- **Status hooks that run another copy of ShellBot are put back to this one.**
+  Measured on a development machine: in `~/.claude/settings.json` and two account profiles, the SessionStart hook ran
+  `sf_agent_hook.py` from a development folder while the other events ran the installed one. ShellBot counted any entry
+  for `sf_agent_hook.py` as installed, so it never noticed. At start-up, and when the switch in Settings is turned on, an
+  entry that runs another copy's hook (a moved install, a development folder) is rewritten to this copy's; the stop
+  check keeps its flag, and other hooks and keys are left alone. Covered by `tests_status_hooks_profiles.py` and
+  `tests_win_restore_resume.py`.
+
+  **跑別份 ShellBot 的狀態 hook 會改回這一份。** 在一台開發用電腦上量到：`~/.claude/settings.json` 和兩個帳號 profile 裡，SessionStart
+  那條 hook 跑的是開發資料夾裡的 `sf_agent_hook.py`，其他事件跑的是安裝的那份。ShellBot 只要看到 `sf_agent_hook.py` 就當成已安裝，所以沒有
+  發現。現在啟動時，以及在設定裡打開開關時，跑別份程式 hook 的項目（安裝搬過家、開發資料夾）會改寫成這一份的；停止檢查保留它的參數，
+  其他 hook 和設定不動。由 `tests_status_hooks_profiles.py`、`tests_win_restore_resume.py` 守著。
+
+### Internal
+
+- **A test never writes the real Claude settings, and the test run checks it.** The development-machine case above came
+  from a test that started the status monitor without moving the settings paths. During a test, ShellBot refuses to
+  write the real home's `.claude` or `.config/shellframe` settings (the real home is read from the system, not `$HOME`),
+  and the account-profile folder follows the test's own config folder. `run_tests.sh` now takes a fingerprint of
+  ShellBot's hook entries in the real Claude settings, and of whether demo data is in the office preferences, before the
+  run and compares after; a difference fails the run (`scripts/user_files_guard.py`, `tests_user_files_guard.py`).
+
+  **測試不會寫到真的 Claude 設定，跑測試時也會檢查。** 上面那台開發用電腦的情況，是一支測試啟動了狀態監看，卻沒把設定檔路徑換掉。現在測試
+  期間，ShellBot 不寫真正家目錄底下 `.claude`、`.config/shellframe` 的設定（真正的家目錄從系統查，不看 `$HOME`），帳號 profile 的資料夾也
+  跟著測試自己的設定資料夾。`run_tests.sh` 跑之前會記下真實 Claude 設定裡 ShellBot 的 hook 項目，以及辦公室偏好裡有沒有示範資料，跑完再比對；
+  不一樣就算失敗（`scripts/user_files_guard.py`、`tests_user_files_guard.py`）。
+
 ## v0.60.0 (2026-11-19)
 
 ### Fixes
