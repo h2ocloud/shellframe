@@ -95,6 +95,7 @@ from api_guide import GuideApiMixin
 from api_tasks import TasksApiMixin
 from api_office import OfficeApiMixin
 from api_office_objects import OfficeObjectsApiMixin
+from api_ops import OpsApiMixin
 from api_deliverables import DeliverablesApiMixin
 import tmux_sessions
 import wake_watch
@@ -253,6 +254,9 @@ DEFAULT_CONFIG = {
         # office floor behind the 辦公室 button of the sidebar's top row. On for a new install; one that predates it
         # keeps off (bots.keep_old_install_office_setting). Off: the button shows an intro card, no iframe, no timer.
         "experimental_office": True,
+        # The office's ops TV (office_ops.py): a lobby-wall TV for this computer's CPU, memory, network and disk,
+        # a red dot and one system notification when something stays wrong. Off: no sampler thread runs.
+        "experimental_ops": False,
         # Agents addressing each other with [[SF:TO:<role>|<text>]]. Off by
         # default: delivery writes into another agent's prompt unattended, and
         # every tab runs with permissions bypassed. Rules live in agent_link.py.
@@ -2050,7 +2054,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
           AccountsApiMixin, BridgesApiMixin, DesktopApiMixin, ExtensionsApiMixin,
           LinkApiMixin, RemoteApiMixin, StatusApiMixin,
           UpdateApiMixin, VoiceApiMixin, TmuxApiMixin, BotsApiMixin, BotMemoryApiMixin, ChatApiMixin, PushApiMixin,
-          ConnectApiMixin, TabModelApiMixin, GuideApiMixin, OfficeApiMixin, OfficeObjectsApiMixin, DeliverablesApiMixin, TasksApiMixin):
+          ConnectApiMixin, TabModelApiMixin, GuideApiMixin, OfficeApiMixin, OfficeObjectsApiMixin, OpsApiMixin, DeliverablesApiMixin, TasksApiMixin):
     """JS <-> Python bridge."""
 
     def __init__(self):
@@ -3325,6 +3329,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             old_hotkey = (cfg.get("settings", {}) or {}).get("global_hotkey_enabled", True)
             cfg["settings"] = json.loads(settings_json)
             save_config(cfg)
+        self._ops_sync()            # the ops TV's sampler starts or stops with its switch
         # Re-register the global hotkey if the toggle changed, so users
         # don't need to restart for the setting to take effect.
         new_hotkey = cfg["settings"].get("global_hotkey_enabled", True)
@@ -4568,6 +4573,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             _unregister_global_hotkey()
         except Exception:
             _swallow("Api.cleanup_all:6035")
+        self._ops_shutdown()
         if self.bridge:
             self.bridge.stop()
             self.bridge = None
@@ -5694,6 +5700,7 @@ def main():
     api._start_frame_link()
     api._start_delay_scheduler()
     api._bot_memory_start()
+    api._ops_start()
     # Telegram must not depend on the window rendering: a dialog or a stalled
     # load would otherwise cut off remote access entirely. Started on a thread
     # so a slow network cannot hold up the window either.

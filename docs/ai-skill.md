@@ -619,6 +619,15 @@ the person left 「也告訴 <you>」 ticked, puts one line in the tab of the bo
 「（看板）#N「<title>」我的回覆：<answer>」. Treat it as the person's answer to that question. With several paired computers
 the sheet has a 這台 / 隔壁：<computer> switcher; a paired computer's board is read only.
 
+The lobby wall's TV is the ops TV, behind its own switch, `experimental_ops` (off by default; Settings → Office). It shows how
+this computer is doing (CPU per core, memory and its pressure, swap, network speed, free disk) and turns red when something stays
+wrong: memory pressure "high" for 10 minutes, CPU over 90% for 5, disk under 10% free, swap growing by more than 2 GB in half an
+hour (the person can change each number or switch a rule off in the TV's detail screen). Alert events also send one system
+notification and put a red dot on the sidebar's 辦公室 button. It reads the computer every 5 minutes (every 30 s while a rule is
+over its line, every 2 s while its detail screen is open), keeps 24 hours of 5-minute points in `ops_history.json` and its rules in
+`ops.json` (the state folder), and names the five biggest programs by name only while the detail screen is open. It is read only and
+sends nothing anywhere; there is nothing for you to drive. If the person asks why the TV is red, the reason is on its banner.
+
 ## 4.11 Deliverables (what you hand the person)
 
 A file or link you give the person is one line in a conversation, and a few messages later it is gone. Register it and it
@@ -713,6 +722,7 @@ sfctl deliver show N
 | No new commands: the board button (sidebar foot, both views, ⌘/Ctrl+Shift+B) opens the task board without the office; a decision card has 回覆 (the answer closes it and reaches the bot that asked); a bot's system prompt now says to put what it asks the user on the board (`task add --decision`) | 0.58.0 |
 | `sfctl tg-push --preview` (links get no preview card otherwise). No other new commands: Bots, 辦公室 and 看板 sit in a row at the top of the sidebar; 「待你決定」 on the right lists tabs waiting on a menu and decision cards; Settings → Office has 不分享任務給隔壁電腦 (`settings.link_share_tasks_off`: a paired computer's GET /link/tasks gets 403); `bots_open` on a bot whose tab has died opens a new tab instead of answering "already awake" | 0.59.0 |
 | `sfctl deliver add <path-or-url> --title … [--note …] [--task N]` / `list` / `show N` (§4.11): files and links handed to the person, kept as references on the bot's or tab's desk in the office; the 「交付物」 button, a section of 「待你決定」 and a paperclip in the sidebar; a bot's system prompt says to register what it hands over; the person's 請他改 reaches the bot as 「（交付物）請改…」 | 0.60.0 |
+| No new commands: the office's ops TV (`experimental_ops`, off by default, §4.10): this computer's CPU, memory, network and disk on the lobby wall, red on a lasting problem, one system notification per alert, rules in `ops.json`; the page's `office_object_view` / `office_object_live` / `ops_state` | 0.61.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

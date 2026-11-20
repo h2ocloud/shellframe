@@ -25,6 +25,7 @@ import api_office
 import office_bookshelf
 import office_deliverables
 import office_objects
+import office_ops
 import office_personnel
 import sf_lang
 import state_store as ss
@@ -35,7 +36,7 @@ _ = sf_lang.pick
 
 
 def builtin_objects():
-    return [office_bookshelf.Bookshelf(), office_personnel.Personnel(), office_deliverables.Deliverables()]
+    return [office_bookshelf.Bookshelf(), office_personnel.Personnel(), office_deliverables.Deliverables(), office_ops.Ops()]
 
 
 class OfficeObjectsApiMixin:
