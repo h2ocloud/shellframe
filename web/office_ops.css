@@ -115,3 +115,6 @@
 @media (max-width:560px){.op-grid{grid-template-columns:minmax(0,1fr)}}
 @media (prefers-reduced-motion:reduce){.op-sec.flash{animation:none}.op-sw,.op-sw::after{transition:none}}
 .op-reset{margin-top:10px;height:30px;font-size:12.5px}
+/* a paired computer's window: the rules are shown, not changed from here */
+.op-ro{font-size:12px;color:var(--yellow);margin:0 0 8px}
+.op-rules.ro .op-sw,.op-rules.ro .op-num{opacity:.55;cursor:not-allowed}

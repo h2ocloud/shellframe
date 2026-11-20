@@ -1389,7 +1389,7 @@ class FrameLink:
                                       sign_for=peer, nonce=nonce)
                 if path in ("/link/bots", "/link/tasks", "/link/push/status", "/link/ops", "/link/ops/view"):
                     cmd = {"/link/bots": "bots_link", "/link/tasks": "tasks_link", "/link/ops": "ops", "/link/ops/view": "ops_view"}.get(path, "push_status")
-                    code, res = link._bots_route(peer_id, cmd, {k: (v or [""])[0] for k, v in q.items()})
+                    code, res = link._bots_route(peer_id, cmd, {k: (q.get(k) or [""])[0] for k in (("rev", "lang", "sort") if "/ops" in path else ("rev",))})
                     return self._send(code, res, sign_for=peer, nonce=nonce)
                 if path == "/link/events":
                     try:

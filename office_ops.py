@@ -212,7 +212,7 @@ class Collector:
     # ── the schedule ──
     def interval(self, now) -> float:
         with self._lock:
-            if self._live and now < max(self._live.values()):
+            if now < max(self._live.values(), default=0.0):
                 return LIVE_S
             return WATCH_S if self.engine.pending() else NORMAL_S
 
@@ -232,8 +232,7 @@ class Collector:
 
     def is_live(self, now=None) -> bool:
         now = self.clock() if now is None else now
-        live = self._live
-        return bool(live) and now < max(live.values())
+        return now < max(list(self._live.values()), default=0.0)
 
     def start(self):
         if self.running:

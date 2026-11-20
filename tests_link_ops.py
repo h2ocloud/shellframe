@@ -199,7 +199,7 @@ try:
           and set(got) == {"success", "level", "reason", "since", "muted_until", "updated", "face"}, sorted(got))
     check("…the level and the face", got["level"] == "ok" and got["face"]["cpu"] == 12.0 and got["face"]["mem"] == 62.5
           and got["updated"] == clock.t, got)
-    check("…the language arrived (a=asked with lang en)", a.asked[-1] == ("ops", {"lang": "en", "peer_id": b.fid}), a.asked[-1])
+    check("…the language arrived (a=asked with lang en)", a.asked[-1] == ("ops", {"rev": "", "lang": "en", "sort": "", "peer_id": b.fid}), a.asked[-1])
     v = link_ops.peer_view(b.link, a.fid, "zh")
     check("/link/ops/view: success, in Chinese", v["success"] is True and v["title"] == "維運戰情" and len(v["sections"]) >= 5, v.get("code"))
     check("…and the serving side's own language is not changed by the asker", coll.lang == "en")
