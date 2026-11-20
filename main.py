@@ -253,6 +253,9 @@ DEFAULT_CONFIG = {
         # office floor behind the 辦公室 button of the sidebar's top row. On for a new install; one that predates it
         # keeps off (bots.keep_old_install_office_setting). Off: the button shows an intro card, no iframe, no timer.
         "experimental_office": True,
+        # The office's ops TV (office_ops.py): a lobby-wall TV for this computer's CPU, memory, network and disk,
+        # a red dot and one system notification when something stays wrong. Off: no sampler thread runs.
+        "experimental_ops": False,
         # Agents addressing each other with [[SF:TO:<role>|<text>]]. Off by
         # default: delivery writes into another agent's prompt unattended, and
         # every tab runs with permissions bypassed. Rules live in agent_link.py.
