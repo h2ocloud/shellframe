@@ -48,6 +48,23 @@
   不裝新套件。Windows 沒有記憶體壓力等級，改用可用記憶體推算（不到 10% 算警告、不到 5% 算高）。由 `tests_ops_sampler_win.py` 守著：
   每個平台都檢查系統結構的大小與欄位位置，在 Windows 上讀真的數值。
 
+### Fixes
+
+- **A message sent to a tab with a picture in it is submitted, not left in the composer.**
+  Reported with the log: a message sent from the office's chat box to a Claude Code tab stayed in the tab's composer
+  until the person pressed Enter; the paste had been followed by its Enter, but no turn began. The message held a
+  pasted picture, which Claude Code turns into an [Image #N] attachment, reading the file before it takes the next
+  key. A paste that names an image file now waits 0.9 s before its Enter, and 1.2 s after the Enter, if the tab's hook
+  did not say a turn began, the tab is not working, no menu is up and the paste is still on the screen, one more Enter
+  is sent, once. Only in an AI CLI's tab (in a shell a program may be waiting for a line). Covered by
+  `tests_send_submit_check.py`.
+
+  **含圖片的訊息送進分頁後會真的送出，不會留在輸入框。** 回報（附 log）：從辦公室對話框送給 Claude Code 分頁的訊息，一直留在分頁的輸入框，
+  要按 Enter 才送出；貼上之後其實有送 Enter，但沒有開始回合。那則訊息裡有一張貼上的圖，Claude Code 會先讀檔把它變成 [Image #N] 附件，
+  才接下一個按鍵。現在貼上內容含圖片檔名時，送 Enter 前先等 0.9 秒；送 Enter 後 1.2 秒，如果分頁的 hook 沒說開始回合、分頁沒在工作、
+  沒有選單、畫面上還看得到剛貼的內容，就再補一次 Enter（只補一次）。只對 AI CLI 的分頁這樣做（shell 裡可能有程式在等一行輸入）。由
+  `tests_send_submit_check.py` 守著。
+
 ### Changes
 
 - **Room signs keep clear of the furniture.**

@@ -3792,6 +3792,44 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             _swallow("Api._prepare_pane_for_input:2945")
         return False
 
+    # A paste that names an image file: Claude Code turns the path into an [Image #N] attachment, reading the
+    # file before it takes the next key, so an Enter right behind it can be lost (11-20, an office message with a
+    # pasted picture stayed in the composer until the person pressed Enter).
+    _SEND_IMAGE_RE = re.compile(r"\.(?:png|jpe?g|gif|webp|heic|bmp|tiff?)\b", re.I)
+    _SEND_MENU_RE = re.compile(r"❯\s*\d+\.|Do you want to|\(y/n\)", re.I)
+
+    def _submit_stuck(self, s, text, t_enter) -> bool:
+        """After an Enter: did the paste stay in the composer? No when the tab's hook said a turn began after the
+        Enter, when it is working (esc to interrupt), or when a menu is up (an Enter there would pick an option)."""
+        ev = (getattr(self, "_hook_events", None) or {}).get(s.sid) or {}
+        if ev.get("ts", 0) >= t_enter and ev.get("state") in ("working", "decision", "done", "idle"):
+            return False
+        try:
+            tail = self._ANSI_RE.sub("", bytes(s._recent).decode("utf-8", errors="replace"))
+        except Exception:
+            return False
+        if re.search(r"esc to interrupt", tail, re.I) or self._SEND_MENU_RE.search(tail[-1500:]):
+            return False
+        probe = re.sub(r"\s+", "", text)[-18:]
+        flat = re.sub(r"\s+", "", tail[-3000:])
+        return bool((probe and probe in flat) or re.search(r"\[(?:Pasted (?:Content|text)|Image #\d+)[^\]]*\]", tail[-1500:], re.I))
+
+    def _check_submitted_later(self, s, text, t_enter, nudge, after=1.2):
+        """One more Enter, once, for a paste that stayed in the composer; on a thread of its own (a broadcast is not
+        held up). An Enter on an empty composer does nothing, so a wrong guess costs nothing. Only an AI CLI's tab:
+        in a shell a program may be waiting for a line, and an Enter would answer it."""
+        if agent_status.worker_kind(str(getattr(s, "cmd", "") or "")) == "other":
+            return
+        def run():
+            time.sleep(after)
+            try:
+                if getattr(s, "alive", True) and self._submit_stuck(s, text, t_enter):
+                    _dlog("send", f"nudge Enter sid={s.sid} (paste still in the composer {after}s after Enter)")
+                    nudge()
+            except Exception:
+                _swallow("Api._check_submitted_later")
+        threading.Thread(target=run, daemon=True, name=f"send-check-{s.sid}").start()
+
     def _send_text_to_session(self, s: Session, text: str, submit: bool = False) -> bool:
         """Send orchestrator text as a paste, then optionally press Enter.
 
@@ -3832,7 +3870,11 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                     pasted = True
                 if submit:
                     if text:
-                        time.sleep(min(0.5, max(0.08, len(text) / 50000.0)))
+                        wait = min(0.5, max(0.08, len(text) / 50000.0))
+                        if self._SEND_IMAGE_RE.search(text):
+                            wait = max(wait, 0.9)       # Claude Code reads the image into an attachment first
+                        time.sleep(wait)
+                    t_enter = time.time()
                     entered = subprocess.run(
                         ["tmux", "send-keys", "-t", tmux_name, "Enter"],
                         capture_output=True,
@@ -3840,6 +3882,9 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                     )
                     if entered.returncode != 0:
                         raise RuntimeError(entered.stderr.decode("utf-8", errors="replace").strip())
+                    if text:
+                        self._check_submitted_later(s, text, t_enter, lambda: subprocess.run(
+                            ["tmux", "send-keys", "-t", tmux_name, "Enter"], capture_output=True, timeout=3))
                 _dlog("send", f"tmux paste sid={s.sid} len={len(text)} submit={submit}")
                 return True
             except Exception as e:
