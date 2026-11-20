@@ -23,6 +23,7 @@ import usage_probe
 import sf_lang
 from sf_config import CONFIG_LOCK
 from api_host import main
+from account_manager import refs_with_global_fallback
 
 
 def _lang(en, zh):
@@ -180,6 +181,9 @@ class AccountsApiMixin:
         old = self.sessions.get(sid)
         if not old:
             raise ValueError(_lang("This tab does not exist or is closed", "此 tab 不存在或已關閉"))
+        cfg = self._account_config()
+        old_refs = refs_with_global_fallback(cfg, getattr(old, "account_refs", {}) or {})
+        account_refs = refs_with_global_fallback(cfg, account_refs)
         cmd = old.cmd
         # 保留對話：把行程砍掉重開時（換帳號、或「套用 CLI 更新」重啟），用
         # --resume <uuid> 接回原對話。claude 換帳號會換 config dir，先把 uuid 的
@@ -195,8 +199,7 @@ class AccountsApiMixin:
             # ShellFrame 重開後、還沒收到 hook 的閒置分頁，session_id 是空的。
             # 空著就會跳過下面整段家目錄判斷，直接用舊指令重開（實測：分頁消失）。
             csid = main._claude_session_hint(self._pane_pids(old), cmd)
-        same_account = (dict(account_refs or {})
-                        == dict(getattr(old, "account_refs", {}) or {}))
+        same_account = dict(account_refs or {}) == dict(old_refs or {})
         try:
             provider = main.usage_probe.detect_ai(cmd)
         except Exception:

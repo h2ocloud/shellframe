@@ -28,6 +28,15 @@ def _empty_accounts():
             "sessions": {}}
 
 
+def refs_with_global_fallback(cfg: dict, refs: dict | None = None):
+    """Fill blank provider refs from ``accounts.global`` for a relaunch."""
+    accounts = cfg.get("accounts") or _empty_accounts()
+    global_refs = accounts.get("global") or {}
+    current = refs or {}
+    return {provider: current.get(provider) or global_refs.get(provider)
+            for provider in PROVIDERS}
+
+
 def _jwt_claims(token: str) -> dict:
     try:
         part = token.split(".")[1]
@@ -336,6 +345,15 @@ class AccountManager:
                     for provider in PROVIDERS}
         return {provider: (accounts.get("global") or {}).get(provider)
                 for provider in PROVIDERS}
+
+    def refs_with_global_fallback(self, cfg: dict, refs: dict | None = None):
+        """Fill blank provider refs from ``accounts.global`` for a relaunch.
+
+        A manifest can contain an explicit ``None`` from a tab created before
+        account profiles existed.  That is different from an explicit profile
+        ref, but both are keys in the dict, so ``setdefault`` cannot repair it.
+        """
+        return refs_with_global_fallback(cfg, refs)
 
     def set_session_ref(self, cfg: dict, sid: str, provider: str, ref: str):
         if provider not in PROVIDERS:

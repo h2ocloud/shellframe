@@ -3071,10 +3071,10 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 cmd = _canonical_cmd(info["cmd"] or entry.get("cmd") or "bash")
                 account_refs = dict(entry.get("account_refs") or {})
                 for provider in account_manager.PROVIDERS:
-                    account_refs.setdefault(
-                        provider,
-                        _tmux_get_env(tmux_name, f"SF_ACCOUNT_{provider.upper()}")
-                        or default_account_refs.get(provider),
+                    account_refs[provider] = (
+                        account_refs.get(provider)
+                        or _tmux_get_env(tmux_name, f"SF_ACCOUNT_{provider.upper()}")
+                        or default_account_refs.get(provider)
                     )
                 if sid in self.sessions:
                     continue  # already attached
@@ -3132,7 +3132,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 # rollout 要在「這個分頁的帳號目錄」底下找。帳號 profile 的
                 # rollout 不在全域樹裡，用全域路徑找一定落空，然後就會判定
                 # 「找不到記錄檔」而開一個空白對話。
-                entry_refs = dict(entry.get("account_refs") or default_account_refs)
+                entry_refs = ACCOUNT_MANAGER.refs_with_global_fallback(
+                    cfg, dict(entry.get("account_refs") or {}))
                 found = self._codex_rollout_exists(
                     csid, agent_status.codex_sessions_root(
                         {"config_dir": self._provider_config_dir("codex",

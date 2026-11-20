@@ -37,6 +37,7 @@ import shlex
 import shutil
 
 import launch_cmd
+import sf_config
 
 # provider -> what its CLI takes. One table; everything below is derived from it.
 #   flag    the command-line flag that pins a model
@@ -183,14 +184,50 @@ def _codex_dir() -> str:
     return os.path.expanduser(os.environ.get("CODEX_HOME") or "~/.codex")
 
 
-def codex_models() -> list:
+def _global_codex_ref() -> str:
+    try:
+        with open(sf_config.config_file(), encoding="utf-8") as f:
+            cfg = json.load(f) or {}
+        return str(((cfg.get("accounts") or {}).get("global") or {}).get("codex") or "").strip()
+    except (OSError, ValueError, AttributeError, TypeError):
+        return ""
+
+
+def _codex_dirs(account_ref=None) -> list:
+    """Profile first, then the process override, then the user's default home."""
+    dirs = []
+    ref = account_ref or _global_codex_ref()
+    if ref:
+        dirs.append(str(sf_config.config_dir() / "account-profiles" / "codex" / ref))
+    dirs.extend([_codex_dir(), os.path.expanduser("~/.codex")])
+    out = []
+    for directory in dirs:
+        directory = os.path.realpath(os.path.expanduser(directory))
+        if directory not in out:
+            out.append(directory)
+    return out
+
+
+def _codex_cache_path(account_ref=None) -> str:
+    for directory in _codex_dirs(account_ref):
+        path = os.path.join(directory, "models_cache.json")
+        if os.path.isfile(path):
+            return path
+    return ""
+
+
+def codex_models(account_ref=None) -> list:
     """[{"key", "label", "listed"}] from Codex's own models_cache.json, the file its /model menu is
-    drawn from (Codex fetches it for the signed-in account), in Codex's order; [] when there is none.
+    drawn from (Codex fetches it for the signed-in account), in Codex's order. With no explicit ref,
+    the signed-in global account profile is preferred, then CODEX_HOME, then ~/.codex; an account_ref
+    reads that profile first. [] when there is none.
     `listed` False: Codex keeps it off its menu, as it did gpt-5.5 for ChatGPT accounts (reported: the
     picker offered only gpt-5.5, which the account then refused). Only slug, display_name, visibility
     and priority are read. Read again only when the file changes. It lists, it never refuses: the
     cache can lag a Codex release, and a launcher may pin a model it does not name yet."""
-    path = os.path.join(_codex_dir(), "models_cache.json")
+    path = _codex_cache_path(account_ref)
+    if not path:
+        return []
     try:
         key = (path, os.path.getmtime(path))
     except OSError:
@@ -297,16 +334,16 @@ def describe(cmd: str) -> str:
 CUSTOM = "__custom__"            # the last item of a picker's list: not a model, "type one yourself"
 
 
-def label_of(provider: str, key: str) -> str:
+def label_of(provider: str, key: str, account_ref=None) -> str:
     """The name a person reads for a model key; the key itself when the table has no name for it."""
     if provider == "codex":
-        hit = next((m["label"] for m in codex_models() if m["key"] == key), "")
+        hit = next((m["label"] for m in codex_models(account_ref=account_ref) if m["key"] == key), "")
         if hit:
             return hit
     return next((lab for k, lab in (_TABLE.get(provider) or {}).get("models", []) if k == key), "") or key
 
 
-def choices(provider: str, zh: bool = False) -> list:
+def choices(provider: str, zh: bool = False, account_ref=None) -> list:
     """What a model picker for *provider* lists, as [{"key", "label"}]: "CLI default" first (key
     ""), then the table's models, and last "Other (custom)" (key CUSTOM, "custom": true: a text
     box, checked by `check`). A CLI that takes no model pin on its command line (Antigravity, a
@@ -323,7 +360,7 @@ def choices(provider: str, zh: bool = False) -> list:
             if mid not in seen:
                 seen.add(mid)
                 out.append({"key": mid, "label": f"{mid} · {prov}"})
-    listed = [m for m in codex_models() if m["listed"]] if provider == "codex" else []
+    listed = [m for m in codex_models(account_ref=account_ref) if m["listed"]] if provider == "codex" else []
     out += ([{"key": m["key"], "label": m["label"]} for m in listed] if listed
             else [{"key": k, "label": lab} for k, lab in spec["models"]])
     out.append({"key": CUSTOM, "label": "其他（自訂）" if zh else "Other (custom)", "custom": True})
@@ -341,9 +378,9 @@ def _shapes(provider: str):
     return [re.compile(p) for p in pats]
 
 
-def _kind(provider: str, model: str) -> str:
+def _kind(provider: str, model: str, account_ref=None) -> str:
     """"listed" (in the picker), "known" (a key or id shape the CLI takes), or ""."""
-    cm = codex_models() if provider == "codex" else []
+    cm = codex_models(account_ref=account_ref) if provider == "codex" else []
     listed = [m["key"] for m in cm if m["listed"]]
     if model in listed or (not listed and any(k == model for k, _ in _TABLE[provider]["models"])):
         return "listed"
@@ -364,7 +401,7 @@ def suggest(provider: str, model: str) -> str:
     return low[close[0]] if close else ""
 
 
-def check(cmd: str, model: str) -> dict:
+def check(cmd: str, model: str, account_ref=None) -> dict:
     """Whether *model* can be pinned on *cmd*, without starting anything:
     {"ok", "code", "kind", "provider", "suggestion"}.
       ok, kind "default"   no model: the CLI's own
@@ -398,17 +435,18 @@ def check(cmd: str, model: str) -> dict:
             return dict(out, kind="known")
         close = difflib.get_close_matches(model, ids, n=1, cutoff=0.6)
         return dict(out, ok=False, code="unknown_model", kind="", suggestion=close[0] if close else "", keys=ids)
-    kind = _kind(provider, model)
+    kind = _kind(provider, model, account_ref=account_ref)
     if kind:
-        hidden = provider == "codex" and any(m["key"] == model and not m["listed"] for m in codex_models())
+        hidden = provider == "codex" and any(m["key"] == model and not m["listed"]
+                                            for m in codex_models(account_ref=account_ref))
         return dict(out, kind=kind, hidden=True) if hidden else dict(out, kind=kind)
     return dict(out, ok=False, code="unknown_model", kind="", suggestion=suggest(provider, model))
 
 
-def pinned(cmd: str, model: str) -> dict:
+def pinned(cmd: str, model: str, account_ref=None) -> dict:
     """What a role's command will run on: the role's `model`, else the one already pinned in its
     command, and whether the check knows it. {"model", "label", "ok", "code", "kind", "provider", "suggestion"}.
     A stored key that fails the check is what the editor flags as "may not take effect"."""
     model = ("" if model is None else str(model)).strip() or current_model(cmd)
-    res = check(cmd, model)
-    return dict(res, model=model, label=label_of(res["provider"], model) if model else "")
+    res = check(cmd, model, account_ref=account_ref)
+    return dict(res, model=model, label=label_of(res["provider"], model, account_ref=account_ref) if model else "")
