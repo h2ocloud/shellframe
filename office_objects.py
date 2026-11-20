@@ -271,6 +271,19 @@ def _vtone(v):
     return v if v in TONES else ""
 
 
+def _switch(raw):
+    """A table's optional row of buttons: {"action", "value", "options": [{"id", "label"}], "note"}, or None when it has
+    no action id or fewer than two valid options. `value` is one of the option ids (else the first)."""
+    if not isinstance(raw, dict) or not _ID.fullmatch(str(raw.get("action") or "")):
+        return None
+    opts = [{"id": o["id"], "label": _name(o.get("label"), 30)} for o in (raw.get("options") or [])[:6]
+            if isinstance(o, dict) and _ID.fullmatch(str(o.get("id") or ""))]
+    if len(opts) < 2:
+        return None
+    value = raw.get("value") if raw.get("value") in [o["id"] for o in opts] else opts[0]["id"]
+    return {"action": raw["action"], "value": value, "options": opts, "note": _name(raw.get("note"), 120)}
+
+
 def _widget(w):
     """One widget as the page may take it, or None (an unknown kind is dropped, not an error)."""
     if not isinstance(w, dict) or w.get("kind") not in WIDGET_KINDS:
@@ -297,8 +310,12 @@ def _widget(w):
                 "step_s": int(_fnum(w.get("step_s"), 1, 86400) or 1),
                 "cells": [c if c in STRIP_CELLS else "none" for c in (w.get("cells") or [])[:POINTS_MAX]]}
     if kind == "table":
-        return {"kind": kind, "columns": [_name(c, 30) for c in (w.get("columns") or [])[:6]],
-                "rows": [[_name(c, 80) for c in r[:6]] for r in (w.get("rows") or [])[:20] if isinstance(r, (list, tuple))]}
+        out = {"kind": kind, "columns": [_name(c, 30) for c in (w.get("columns") or [])[:6]],
+               "rows": [[_name(c, 80) for c in r[:6]] for r in (w.get("rows") or [])[:20] if isinstance(r, (list, tuple))]}
+        sw = _switch(w.get("switch"))
+        if sw:
+            out["switch"] = sw
+        return out
     if kind == "stat":
         return {"kind": kind, "label": label, "value": _name(w.get("value"), 40), "sub": _name(w.get("sub"), 120),
                 "tone": _vtone(w.get("tone"))}

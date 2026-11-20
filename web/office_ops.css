@@ -69,6 +69,14 @@
 .op-strip .c-ok{background:#3d5a39}.op-strip .c-warn{background:var(--yellow)}.op-strip .c-alert{background:var(--red)}.op-strip .c-none{background:rgba(192,202,245,.12)}
 .op-axis{display:flex;justify-content:space-between;font-size:11px;color:var(--mute);margin-top:4px}
 /* table */
+.op-switch{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.op-seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.op-segb{height:24px;padding:0 10px;background:transparent;border:0;border-right:1px solid var(--line);color:var(--dim);font:600 11.5px var(--font);cursor:pointer}
+.op-segb:last-child{border-right:0}
+.op-segb:hover{color:var(--ink)}
+.op-segb.on{background:rgba(122,162,247,.22);color:var(--ink)}
+.op-segb:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+.op-snote{font-size:11.5px;color:var(--dim)}
 .op-table{width:100%;border-collapse:collapse;font-size:12.5px}
 .op-table th{text-align:left;font-weight:600;font-size:11.5px;color:var(--mute);padding:0 8px 5px 0;border-bottom:1px solid rgba(59,66,97,.8)}
 .op-table td{padding:6px 8px 6px 0;border-bottom:1px solid rgba(59,66,97,.35);overflow-wrap:anywhere}

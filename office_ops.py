@@ -16,7 +16,8 @@ The collector (one daemon thread, `threading.Event`, started only while the flag
   `on_level`, called by the collector thread after the lock is released.
 
 What it keeps (the state folder, never the office's own `office.json`, which the page overwrites whole)
-  `ops.json`          the rules (on/off and number) and the mute time
+  `ops.json`          the rules (on/off and number), the mute time and how the top five is ordered (`top_sort`:
+                      auto, cpu or mem)
   `ops_history.json`  24 hours, 288 points, one per 5 minutes: time, CPU, memory %, pressure, swap, free disk %,
                       network speeds, route. Written every 30 minutes and when the collector stops. Per core
                       numbers and the top five are only ever the newest reading, never kept.
@@ -50,6 +51,13 @@ RECENT_KEEP_S = 1800.0
 PRESSURE_CODE = {"normal": 0, "warn": 1, "critical": 2}
 HOLD_S = 600.0                     # a reading still stands for the strip this long after it was taken
 MUTE_MAX_MIN = 24 * 60
+TOP_SORTS = ("auto", "cpu", "mem")
+TOP_SORT_DEFAULT = "auto"
+# "auto" ranks the top five by memory, not CPU, when the computer is short of memory: the memory pressure is
+# not normal, or the memory used is at least this share of the total, or the swap in use is at least this
+# much. Otherwise by CPU. Any one of the three is enough; a reading that is missing counts as "not short".
+TOP_AUTO_MEM_PCT = 80.0
+TOP_AUTO_SWAP_BYTES = 4 * 1024 ** 3
 
 DECLARATION = {
     "id": "ops",
@@ -66,6 +74,7 @@ DECLARATION = {
         {"id": "unmute", "label": {"en": "Unmute", "zh": "取消靜音"}},
         {"id": "set_rule", "label": {"en": "Change a rule", "zh": "調整規則"}},
         {"id": "reset_rules", "label": {"en": "Back to defaults", "zh": "還原預設規則"}},
+        {"id": "top_sort", "label": {"en": "Top 5 order", "zh": "前 5 名排序"}},
     ],
 }
 
@@ -148,7 +157,8 @@ class Collector:
         self.recent = deque(maxlen=1500)         # light copies of the newest readings (30 minutes)
         self.history = []                        # [t, cpu, mem %, pressure code, swap, free disk %, in, out, online]
         self.latest = {}                         # the newest value of every field (a light sample keeps the memory ones)
-        self.top = []
+        self.top = {}                            # {"cpu": [...], "mem": [...]}: the newest top five in each order
+        self.top_sort = TOP_SORT_DEFAULT
         self.top_t = 0.0
         self.updated = None
         self._live_until = 0.0
@@ -166,6 +176,8 @@ class Collector:
         saved = _read_json(state_file())
         if isinstance(saved, dict):
             self.engine.load(saved)
+            if saved.get("top_sort") in TOP_SORTS:
+                self.top_sort = saved["top_sort"]
         got = _read_json(history_file())
         now = self.clock()
         rows = []
@@ -180,6 +192,7 @@ class Collector:
         try:
             with self._lock:
                 data = self.engine.export()
+                data["top_sort"] = self.top_sort
             _write_json(state_file(), data)
         except Exception:
             _swallow("office_ops.save_rules")
@@ -257,7 +270,7 @@ class Collector:
         full = live or now - self._last_full_t >= FULL_EVERY_S
         sample = self.sampler.sample(full=full)           # subprocesses: no lock held
         want_top = live and now - self.top_t >= TOP_S
-        top = self.sampler.top(5) if want_top else None
+        top = self.sampler.top_both(5) if want_top else None
         started = []
         with self._lock:
             self._last_t = now
@@ -266,7 +279,7 @@ class Collector:
             if top is not None:
                 self.top, self.top_t = top, now
             elif not live:
-                self.top = []
+                self.top = {}
             for k, v in sample.items():
                 if v is not None or k in ("online",):
                     self.latest[k] = v
@@ -385,6 +398,13 @@ class Collector:
             if not ok:
                 return {"ok": False, "message": t("No such rule", "沒有這條規則")}
             msg = t("Rule saved", "規則已存")
+        elif action_id == "top_sort":
+            by = args.get("by")
+            if by not in TOP_SORTS:
+                return {"ok": False, "message": t("No such order", "沒有這種排序")}
+            with self._lock:
+                self.top_sort = by
+            msg = t("Top 5 order saved", "前 5 名排序已存")
         elif action_id == "reset_rules":
             with self._lock:
                 self.engine.reset_rules()
@@ -420,7 +440,8 @@ class Collector:
             latest = dict(self.latest)
             recent = list(self.recent)
             history = list(self.history)
-            top = list(self.top)
+            top = {k: list(v) for k, v in self.top.items()}
+            top_sort = self.top_sort
             cfg = {k: dict(v) for k, v in self.engine.cfg.items()}
             rise = self.engine.swap_rise
             active = {a["rule"] for a in self.engine.active()}
@@ -441,7 +462,7 @@ class Collector:
         out["banner"] = {"level": under, "text": text, "since": st["since"], "rule": st["rule"]}
         sections = []
         if have and self.sampler.kind != "none":
-            sections += self._sections(latest, recent, history, top, cfg, rise, active, now, t)
+            sections += self._sections(latest, recent, history, top, top_sort, cfg, rise, active, now, t)
         sections.append({"id": "rules", "title": t("What counts as abnormal", "什麼算異常"), "widgets": [
             {"kind": "rules", "items": self._rule_items(cfg, L)}]})
         out["sections"] = sections
@@ -456,7 +477,7 @@ class Collector:
                           "unit": s["unit"][L], "level": s["level"], "min": s["min"], "max": s["max"], "step": s["step"]})
         return items
 
-    def _sections(self, latest, recent, history, top, cfg, rise, active, now, t):
+    def _sections(self, latest, recent, history, top, top_sort, cfg, rise, active, now, t):
         sections = []
         # CPU
         cpu = latest.get("cpu")
@@ -514,10 +535,15 @@ class Collector:
                             "tone": "bad" if free < line else "warn" if free < line * 1.5 else "ok"})
         sections.append({"id": "net", "title": t("Network and disk", "網路與磁碟"), "widgets": widgets})
         # top five
+        by, why = self.top_order(top_sort, latest)
         rows = [[(r["name"] + (f" ×{r['count']}" if r.get("count", 1) > 1 else "")), f"{r['cpu']:.0f}%", fmt_bytes(r["rss"])]
-                for r in top[:5]]
-        sections.append({"id": "top", "title": t("Top 5 by CPU", "吃資源前 5 名"), "widgets": [
-            {"kind": "table", "columns": [t("Program", "程式"), "CPU", t("Memory", "記憶體")], "rows": rows}]})
+                for r in (top.get(by) or [])[:5]]
+        names = {"auto": t("Auto", "自動"), "cpu": "CPU", "mem": t("Memory", "記憶體")}
+        sections.append({"id": "top", "title": t("Top 5 by CPU", "吃資源前 5 名・照 CPU") if by == "cpu"
+                         else t("Top 5 by memory", "吃資源前 5 名・照記憶體"), "widgets": [
+            {"kind": "table", "columns": [t("Program", "程式"), "CPU", t("Memory", "記憶體")], "rows": rows,
+             "switch": {"action": "top_sort", "value": top_sort, "options": [{"id": k, "label": names[k]} for k in TOP_SORTS],
+                        "note": self._top_note(top_sort, by, why, latest, t)}}]})
         # the last 24 hours
         end = int(now // HISTORY_STEP_S)
         start = (end - HISTORY_KEEP + 1) * HISTORY_STEP_S
@@ -534,6 +560,30 @@ class Collector:
             {"kind": "strip", "label": t("Memory pressure (every 5 minutes)", "記憶體壓力（每 5 分鐘）"),
              "start": start, "step_s": HISTORY_STEP_S, "cells": cells}]})
         return sections
+
+    @staticmethod
+    def top_order(top_sort, latest):
+        """(order, why): "cpu" or "mem", and for "auto" which condition chose memory ("pressure", "mem", "swap"; "" when CPU)."""
+        if top_sort in ("cpu", "mem"):
+            return top_sort, ""
+        if latest.get("pressure") in ("warn", "critical"):
+            return "mem", "pressure"
+        if (latest.get("mem_pct") or 0) >= TOP_AUTO_MEM_PCT:
+            return "mem", "mem"
+        if (latest.get("swap_used") or 0) >= TOP_AUTO_SWAP_BYTES:
+            return "mem", "swap"
+        return "cpu", ""
+
+    @staticmethod
+    def _top_note(top_sort, by, why, latest, t):
+        if top_sort != "auto":
+            return ""
+        if by == "cpu":
+            return t("Now ranked by CPU", "現在照 CPU 排")
+        reason = {"pressure": t("memory pressure is up", "記憶體壓力偏高"),
+                  "mem": t(f"memory {latest.get('mem_pct') or 0:.0f}% used", f"記憶體已用 {latest.get('mem_pct') or 0:.0f}%"),
+                  "swap": t(f"swap {fmt_bytes(latest.get('swap_used'))}", f"交換區已用 {fmt_bytes(latest.get('swap_used'))}")}[why]
+        return t(f"Now ranked by memory ({reason})", f"現在照記憶體排（{reason}）")
 
     @staticmethod
     def _series(recent, key, now, span, step):
