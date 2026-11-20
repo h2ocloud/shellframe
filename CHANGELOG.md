@@ -6,6 +6,44 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.61.1 (2026-11-20)
+
+### Changes
+
+- **The chat / terminal switch turns every tab at once.**
+  Reported: switching one tab to the terminal left the others in the chat view, so each conversation had to be
+  switched on its own. The switch at the top, ⌘⇧M (Ctrl+Shift+M) and the chat view's Terminal button now change the
+  interface style for every tab, and tabs opened later follow it. A tab with no conversation to show (a plain terminal)
+  stays a terminal. Settings → Advanced → "Switch chat / terminal per tab" (off by default) brings back the old way:
+  only the tab in front changes. Covered by `tests_chat_view_switch.py`.
+
+  **對話／終端機切換改成全部分頁一起切。** 回報：切一個分頁到終端機，其他分頁還停在對話，每個對話都要各自切。現在上方的切換鈕、
+  ⌘⇧M（Ctrl+Shift+M）和對話畫面裡的「終端機」鈕，都會改全部分頁的介面風格，之後新開的分頁也照這個。沒有對話可看的分頁（純終端機）
+  照舊是終端機。設定 →「進階」→「每個分頁各自切換對話／終端機」（預設關）打開後，回到原本的做法：只切目前這個分頁。由
+  `tests_chat_view_switch.py` 守著。
+
+- **The ops board's top five can be sorted by memory.**
+  Reported: the list was by CPU only, so the programs holding the most memory (many Claude Code processes, a browser's
+  renderers) did not show while memory was what made the computer slow. The list now has Auto, CPU and Memory; Auto
+  sorts by memory when memory pressure is not normal, memory in use is 80% or more, or swap is 4 GB or more, and by CPU
+  otherwise; a line beside it says which. Processes of the same program are added together. The choice is kept on
+  this computer. Covered by `tests_ops_sampler.py`, `tests_ops_object.py` and `tests_office_ops_ui.py`.
+
+  **維運戰情的前 5 名可以照記憶體排。** 回報：清單只照 CPU 排，電腦是被記憶體拖慢的時候，吃最多記憶體的程式（很多個 Claude Code
+  行程、瀏覽器的 renderer）反而不在上面。現在有「自動｜CPU｜記憶體」三個選項；「自動」在記憶體壓力不是正常、記憶體已用 80% 以上、
+  或交換區 4 GB 以上時照記憶體排，否則照 CPU，旁邊一行小字寫目前照什麼排。同一個程式的多個行程合在一起算。選擇存在這台電腦。由
+  `tests_ops_sampler.py`、`tests_ops_object.py`、`tests_office_ops_ui.py` 守著。
+
+### Fixes
+
+- **The lobby's sign no longer covers the ops TV.**
+  In the 3D view the lobby's room sign sat over the TV's top right corner. With the TV on the wall the sign moves
+  left, or up, until it clears the TV, the whiteboard, the calendar, the bookshelf and the cabinet; without the TV it
+  stays where it was. Covered by `tests_office_furniture_ui.py`.
+
+  **大廳的名牌不再壓到維運電視。** 立體模式下，大廳名牌壓在電視右上角。牆上有電視時，名牌往左（不夠再往上）移到不壓到電視、白板、
+  日曆、書櫃和檔案櫃的位置；沒有電視時位置不變。由 `tests_office_furniture_ui.py` 守著。
+
 ## v0.61.0 (2026-11-20)
 
 ### Added
