@@ -1029,7 +1029,7 @@ function layout() {
   let need = 0; for (const i of M.tempSeat.values()) need = Math.max(need, i + 1);
   const nT = Math.max(4, Math.ceil(need / 2) * 2), tables = Math.ceil(nT / TMAX), LH = 7.4 + (tables - 1) * 2.3;
   M.LH = LH; M.nT = nT; M.spineX = LW + G / 2;
-  setRoom('lobby', { kind: 'lobby', label: '大廳', tx: 0, ty: 0, tw: LW, th: LH, wallH: 66 });
+  setRoom('lobby', { kind: 'lobby', label: tr('Lobby', '大廳'), tx: 0, ty: 0, tw: LW, th: LH, wallH: 66 });
   seat({ key: 'sec', room: 'lobby', lx: 9.4, ly: 1.0, w: 1.05, h: 2.7, face: 'nx', big: true });
   for (let i = 0; i < nT; i++) { const t = Math.floor(i / TMAX), j = i % TMAX; seat({ key: 't:' + i, room: 'lobby', lx: 1.6 + j * 1.2, ly: 4.8 + t * 2.3, w: 1.2, h: .75, face: 'ny', shared: true }); }
   // 隔壁電腦：每台一間房，排在大廳前面
@@ -1037,7 +1037,7 @@ function layout() {
   for (const pe of M.peers.values()) {
     let n = 3; for (const i of pe.assign.values()) n = Math.max(n, i + 1);
     const cols = Math.min(4, n), rows = Math.ceil(n / 4), w = .9 + cols * COLP + .9, h = .6 + rows * ROWP + .5;
-    const props = { kind: 'peer', label: '隔壁：' + pe.name, wallH: 40, peerId: pe.id, primary: pe.primaryName || '' };
+    const props = { kind: 'peer', label: tr('Next door: ', '隔壁：') + pe.name, wallH: 40, peerId: pe.id, primary: pe.primaryName || '' };
     if (ring) PL.push({ pe, w, h, props: Object.assign({ tw: w, th: h }, props) }); else setRoom('peer:' + pe.id, Object.assign({ tx: .8, ty: py, tw: w, th: h }, props));
     for (let i = 0; i < n; i++) seat({ key: `p:${pe.id}:${i}`, room: 'peer:' + pe.id, lx: .9 + (i % 4) * COLP, ly: .6 + Math.floor(i / 4) * ROWP, w: 1.5, h: .8, face: 'ny', big: i === 0 && !!pe.primaryKey });
     py += h + G;
@@ -2950,6 +2950,7 @@ function draw() {
 // 文字與泡泡：最後一層，用螢幕座標畫，縮放時字不會糊、也不會被前排桌子蓋住
 function headTop(e) { const p = entPos(e); if (!p) return null; const sc = pScale(e) * cam.z, b = t2s(p.x, p.y, 12), standing = (e.walk && e.walk.t >= 0) || e.kind === 'helper'; return { x: b.x, y: b.y - (standing ? 42 : 33) * sc, base: standing ? t2s(p.x, p.y, 0) : b }; }
 function clockIcon(x, y, r, col) { c.strokeStyle = col; c.lineWidth = 1.3; c.beginPath(); c.arc(x, y, r, 0, 6.2832); c.moveTo(x, y - r * .62); c.lineTo(x, y); c.lineTo(x + r * .5, y + r * .32); c.stroke(); }
+let FADE = null; const PILL_LOG = [];   // FADE: screen polygon of the wall piece the pointer is on (labels over it are drawn at 25%); PILL_LOG: the labels of the last frame, for the tests
 function pill(x, y, text, o) {
   const font = o.font || `600 11.5px ${FONT}`, txw = tw(font, text), ic = o.icon ? 15 : 0, h = o.h || 20; let sw = 0; if (o.suffix) sw = tw(o.sfont, o.suffix) + 5; const ck = o.clock ? h * .75 : 0;
   const w = txw + 16 + ic + sw + ck;
@@ -2962,35 +2963,58 @@ function pill(x, y, text, o) {
       y = o.dir < 0 ? hit.y - h / 2 - 3 : hit.y + hit.h + h / 2 + 3; }
     o.avoid.push({ x: x0, y: y - h / 2, w, h });
   }
+  const ga = c.globalAlpha, faded = !!FADE && rectHitsPoly(x0, y - h / 2, w, h, FADE); if (faded) c.globalAlpha = ga * .25;   // over the wall piece under the pointer: faint
+  PILL_LOG.push({ text, x: x0, y: y - h / 2, w, h, alpha: faded ? .25 : 1 });
   c.beginPath(); c.roundRect(x0, y - h / 2, w, h, h / 2); c.fillStyle = o.bg || 'rgba(26,27,38,.86)'; c.fill();
   if (o.border) { c.strokeStyle = o.border; c.lineWidth = 1; c.stroke(); }
   if (o.icon) o.icon(x0 + 11, y);
   c.font = font; c.fillStyle = o.color || COL.ink; c.textAlign = 'left'; c.textBaseline = 'middle'; c.fillText(text, x0 + 8 + ic, y + .5);
   if (o.suffix) { c.font = o.sfont; c.fillStyle = o.scolor; c.fillText(o.suffix, x0 + 8 + ic + txw + 5, y + .5); }
   if (o.clock) clockIcon(x0 + w - 8 - ck / 2 + 2, y, h * .24, COL.yellow);
+  c.globalAlpha = ga;
   return w;
 }
 function miniAvatar(who, x, y, r) { c.save(); c.translate(x, y); if (who.shape) { shapePath(c, who.shape, r); c.fillStyle = who.color; c.fill(); } else { c.beginPath(); c.arc(0, 0, r, 0, 6.2832); c.fillStyle = '#6b7399'; c.fill(); } c.restore(); }
-// A room's name plate: where it is, how big, which colour (screen px). The lobby's plate hangs over the back wall at 74% of its width; while the
-// ops TV is on that wall the plate is moved so that it overlaps no wall piece (the TV, the board, the calendar, the cabinet): first to the left in
-// steps of 4% of the width, then up. tests_office_furniture_ui.py checks the plate's rectangle against the TV's quad in 3D and in the flat view.
-function signGeom(r, plain) {
+// A room's name plate: where it is, how big, which colour (screen px). Where it hangs: the room's own spot first; when that overlaps a wall piece
+// of ANY room (the whiteboards, the calendar, the TVs, the bookshelf, the cabinets: wallHulls) or a plate already placed, it moves in small steps
+// (left, then right, row by row going up); when nothing is free it shrinks to a dot and a short name. A paired computer's plate and the lobby's say only the
+// name; the second line (paired · main bot, secretary · interns) opens while the pointer is on the plate. `plain` = the unmoved spot, as a sanity reference.
+// tests_office_labels_ui.py checks every plate against every wall piece in 3D and flat; tests_office_furniture_ui.py the lobby's against the TV.
+const wallHulls = () => (lodFar ? [] : wallKeys().filter(key => wallObj(key)).map(key => wallScreen(key)));
+const shortName = s => { const a = Array.from(String(s)); return a.length > 10 ? a.slice(0, 10).join('') + '…' : String(s); };
+function signGeom(r, plain, avoid, hulls) {
   const iso = V.m >= .5, k = clamp(cam.z * 1.05, .8, 1.1), front = r.kind !== 'lobby';
   const main = r.label, used = r.kind === 'zone' ? [...M.seats.values()].filter(s => s.room === r.id && s.occ && !s.occ.gone).length : 0;
-  const sub = r.kind === 'zone' ? `${used}/${ZCAP}` : r.kind === 'peer' ? '配對' + (r.primary ? ' · 主要：' + r.primary : '') : '秘書長 · 實習生';
-  const col = r.kind === 'zone' ? teamCol(r.team) : r.kind === 'peer' ? COL.teal : COL.purple;
-  const f1 = `700 ${Math.round(12.5 * k)}px ${FONT}`, f2 = `500 ${Math.round(10.5 * k)}px ${FONT}`, w1 = tw(f1, main), w2 = tw(f2, sub), w = w1 + w2 + 34 * k, h = 25 * k;
+  const sub = r.kind === 'zone' ? `${used}/${ZCAP}` : r.kind === 'peer' ? tr('Paired', '配對') + (r.primary ? ' · ' + tr('Main: ', '主要：') + r.primary : '') : tr('Secretary · interns', '秘書長 · 實習生');
+  const col = r.kind === 'zone' ? teamCol(r.team) : r.kind === 'peer' ? COL.teal : COL.purple, hov = r.kind !== 'zone';   // hov: the second line shows only under the pointer
+  const f1 = `700 ${Math.round(12.5 * k)}px ${FONT}`, f2 = `500 ${Math.round(10.5 * k)}px ${FONT}`, w1 = tw(f1, main), w2 = tw(f2, sub), h = 25 * k;
+  const wFull = w1 + w2 + 34 * k, wOpen = hov ? w1 + 30 * k : wFull;   // wOpen: what is drawn at rest; wFull: with the second line
   let p = front ? (iso ? t2s(r.x + r.w * .3, r.y + r.h, 0) : V.tp ? t2s(r.x + r.w, r.y + r.h / 2, 0) : t2s(r.x + r.w * .5, r.y + r.h, 0)) : (iso || !V.tp) ? t2s(r.x + r.w * (r.kind === 'lobby' ? .74 : .5), r.y - .1, r.wallH + 24) : t2s(r.x - .1, r.y + r.h / 2, r.wallH + 24);
   if (front) p = { x: p.x, y: p.y + (iso ? 17 : 15) * k };
-  else if (!plain && r.kind === 'lobby' && (iso || !V.tp) && wallObj('tv')) {
-    const hulls = wallKeys().filter(key => wallRoom(key) === 'lobby' && wallObj(key)).map(key => wallScreen(key));
-    const hits = q => hulls.some(pts => rectHitsPoly(q.x - w / 2, q.y - h / 2, w, h, pts));
-    for (let up = 0; up <= 3; up++) for (let f = .74; f >= .3; f -= .04) {
-      const q = t2s(r.x + r.w * f, r.y - .1, r.wallH + 24 + up * 14 * k);
-      if (!hits(q)) { p = q; up = 9; break; }
+  let dot = false, w = wOpen, hh = h, shown = main;
+  if (!plain && p.x + w / 2 >= 0 && p.x - w / 2 <= W && p.y >= -30 && p.y <= H + 30) {
+    const hs = hulls || wallHulls(), av = avoid || [];
+    const free = (q, ww, h2) => !hs.some(pts => rectHitsPoly(q.x - ww / 2, q.y - h2 / 2, ww, h2, pts)) && !av.some(a => q.x - ww / 2 < a.x + a.w + 3 && q.x + ww / 2 > a.x - 3 && q.y - h2 / 2 < a.y + a.h + 3 && q.y + h2 / 2 > a.y - 3);
+    const seek = (ww, h2) => { const st = 12 * k;
+      for (let up = 0; up <= 4; up++) for (let i = 0; i <= 33; i++) {
+        const dx = i === 0 ? 0 : i <= 16 ? -i * st : (i - 16) * st, q = { x: p.x + dx, y: p.y - up * 14 * k };
+        if (q.x - ww / 2 < 4 || q.x + ww / 2 > W - 4) continue;
+        if (free(q, ww, h2)) return q; }
+      return null; };
+    if (!free(p, w, h)) {
+      let q = seek(w, h);
+      if (!q) { dot = true; shown = shortName(main); w = tw(f1, shown) + 22 * k; hh = 21 * k; q = seek(w, hh); }
+      if (q) p = q;
     }
   }
-  return { p, k, main, sub, col, f1, f2, w1, w, h, x0: p.x - w / 2 };
+  return { p, k, main: shown, sub, col, f1, f2, w1: dot ? tw(f1, shown) : w1, w, h: hh, x0: p.x - w / 2, dot, hov, wFull, id: r.id };
+}
+// every room's plate, in the order they are drawn: each one keeps clear of the ones before it
+function signLayout(plain) {
+  const out = new Map(), hs = plain ? null : wallHulls(), av = plain ? [] : SIGN_BLOCK.slice();
+  for (const r of M.rooms.values()) { if (r.kind === 'peer' && ARRG.editing()) continue;
+    const g = signGeom(r, plain, av, hs); out.set(r.id, g); av.push({ x: g.x0, y: g.p.y - g.h / 2, w: g.w, h: g.h }); }
+  return out;
 }
 // a rectangle and a convex polygon (screen px) overlap: separating axis over the two box axes and the polygon's edges
 function rectHitsPoly(x, y, w, h, pts) {
@@ -3004,18 +3028,26 @@ function rectHitsPoly(x, y, w, h, pts) {
   }
   return true;
 }
-function roomSign(r, far, placed) {
-  const g = signGeom(r), { p, k, main, sub, col, f1, f2, w1, w, h, x0 } = g;
+let SIGN_BLOCK = [];   // test hook: extra rectangles (screen px) the plates keep clear of
+let SIGNS = new Map(), hoverSign = null, SIGN_LOG = [];   // SIGNS: the plates as last drawn (the pointer reads it); hoverSign: the room whose plate the pointer is on; SIGN_LOG: for the tests
+function roomSign(r, g, placed, fade) {
+  const { p, k, main, sub, col, f1, f2, w1, h } = g; let { w, x0 } = g;
   if (p.x + w / 2 < 0 || p.x - w / 2 > W || p.y < -30 || p.y > H + 30) return; if (placed) placed.push({ x: x0, y: p.y - h / 2, w, h });
-  c.globalAlpha = r.alpha; c.beginPath(); c.roundRect(x0, p.y - h / 2, w, h, 8 * k); c.fillStyle = 'rgba(24,27,40,.94)'; c.fill(); c.strokeStyle = alpha(col, .55); c.lineWidth = 1; c.stroke();
-  ellipse(c, x0 + 12 * k, p.y, 3.6 * k, 3.6 * k, col);
-  c.font = f1; c.fillStyle = COL.ink; c.textAlign = 'left'; c.textBaseline = 'middle'; c.fillText(main, x0 + 22 * k, p.y + .5);
-  c.font = f2; c.fillStyle = alpha(col, .85); c.fillText(sub, x0 + 26 * k + w1, p.y + .5); c.globalAlpha = 1;
+  const open = g.hov && !g.dot && hoverSign === r.id; if (open) { w = g.wFull; x0 = Math.min(x0, W - 4 - w); }
+  const faded = !!fade && rectHitsPoly(x0, p.y - h / 2, w, h, fade);
+  SIGN_LOG.push({ id: r.id, x: x0, y: p.y - h / 2, w, h, text: main + (open || !g.hov ? ' ' + sub : ''), dot: g.dot, open, alpha: faded ? .25 : 1 });
+  c.globalAlpha = r.alpha * (faded ? .25 : 1); c.beginPath(); c.roundRect(x0, p.y - h / 2, w, h, 8 * k); c.fillStyle = 'rgba(24,27,40,.94)'; c.fill(); c.strokeStyle = alpha(col, .55); c.lineWidth = 1; c.stroke();
+  ellipse(c, x0 + (g.dot ? 10 : 12) * k, p.y, (g.dot ? 3 : 3.6) * k, (g.dot ? 3 : 3.6) * k, col);
+  c.font = f1; c.fillStyle = COL.ink; c.textAlign = 'left'; c.textBaseline = 'middle'; c.fillText(main, x0 + (g.dot ? 17 : 22) * k, p.y + .5);
+  if (open || !g.hov) { c.font = f2; c.fillStyle = alpha(col, .85); c.fillText(sub, x0 + 26 * k + w1, p.y + .5); } c.globalAlpha = 1;
 }
+const signAt = (sx, sy) => { for (const g of SIGNS.values()) { if (!g.hov || g.dot) continue; if (sx >= g.x0 && sx <= g.x0 + g.w && sy >= g.p.y - g.h / 2 && sy <= g.p.y + g.h / 2) return g.id; } return null; };   // the plate under the pointer (only the ones with a hidden second line)
 function drawOverlay(far) {
   c.setTransform(DPR, 0, 0, DPR, 0, 0);
   const bs = clamp(cam.z * .95, .72, 1.12), showAll = !far && cam.z >= (V.to < .5 ? .36 : .7), nfs = Math.max(isMobile() ? 9.5 : 10, 11.5 * bs);
-  const placed = []; for (const r of M.rooms.values()) { if (r.kind === 'peer' && ARRG.editing()) continue; roomSign(r, far, placed); }   // 整理位置時，隔壁的標籤換成把手
+  const placed = [], hov = hoverObj && !hoverKey && wallObj(hoverObj) ? wallScreen(hoverObj) : null;   // hov: the wall piece under the pointer; labels over it turn faint
+  SIGNS = signLayout(); SIGN_LOG = []; PILL_LOG.length = 0; FADE = hov;
+  for (const r of M.rooms.values()) { const g = SIGNS.get(r.id); if (g) roomSign(r, g, placed, hov); }   // 整理位置時，隔壁的標籤換成把手（signLayout 略過）
   if (M.rooms.get('lobby') && !far) { const iso = V.m >= .5, p = iso ? t2s(1.6 + Math.min(TMAX, M.nT) * .6, M.LH - .15, 0) : V.tp ? t2s(1.35, 4.8 + Math.min(TMAX, M.nT) * .3, 0) : t2s(1.6 + Math.min(TMAX, M.nT) * .6, 4.55, 0);
     c.font = `600 ${Math.round(11 * bs)}px ${FONT}`; c.fillStyle = alpha(COL.yellow, .75); c.textAlign = 'center'; c.textBaseline = iso ? 'top' : 'bottom'; c.fillText('實習生區 · 不是 bot 的 AI 分頁', p.x, p.y + (iso ? 5 : -4) * bs); }
   const list = []; for (const e of M.ents.values()) { if ((e.gone && !showAll) || (e.walk && e.walk.t < 0) || e.hidden) continue; const h = headTop(e); if (!h || h.x < -80 || h.x > W + 80 || h.y < -80 || h.y > H + 80) continue; list.push({ e, h }); }
@@ -3051,6 +3083,7 @@ function drawOverlay(far) {
     }
   }
   for (const fn of tags) fn();
+  FADE = null;
   if (hoverPile && hoverPt && pileName(hoverPile)) pill(hoverPt.x + 4, hoverPt.y - 20, pileName(hoverPile), { font: `700 12px ${FONT}`, h: 22, color: COL.ink, bg: 'rgba(26,27,38,.95)', border: alpha(COL.blue, .8) });   // 公文堆的提示
   if (hoverObj && hoverPt && !hoverKey && wallObj(hoverObj)) pill(hoverPt.x + 4, hoverPt.y - 20, wallObj(hoverObj).name, { font: `700 12px ${FONT}`, h: 22, color: COL.ink, bg: 'rgba(26,27,38,.95)', border: alpha(COL.blue, .8) });   // 牆上東西的提示
   // 拖曳換位子：目標座位與跟著手指的頭像
@@ -3133,6 +3166,7 @@ cv.addEventListener('pointermove', e => {
   }
   if (e.pointerType === 'mouse') { const pl = pileAtPt(e.clientX, e.clientY), s = pl ? null : pick(e.clientX, e.clientY), id = s ? s.key : null, o = s || pl ? null : wallObjAt(e.clientX, e.clientY); hoverPt = { x: e.clientX, y: e.clientY };
     if (pl !== hoverPile) { hoverPile = pl; cv.classList.toggle('pt', !!(pl || id || o)); kick(); }
+    const hs = id || o || pl ? null : signAt(e.clientX, e.clientY); if (hs !== hoverSign) { hoverSign = hs; kick(); }   // a plate opens its second line only where nothing clickable is under the pointer
     if (id !== hoverKey || o !== hoverObj) { hoverKey = id; hoverObj = o; cv.classList.toggle('pt', !!(pl || id || o)); kick(); } else if (o || pl) kick(); }
 });
 const endPtr = e => {
@@ -3142,7 +3176,7 @@ const endPtr = e => {
   if (!ptrs.size) drag = null;
 };
 cv.addEventListener('pointerup', endPtr); cv.addEventListener('pointercancel', endPtr);
-cv.addEventListener('pointerleave', () => { if (hoverKey || hoverObj || hoverPile) { hoverKey = null; hoverObj = null; hoverPile = null; cv.classList.remove('pt'); kick(); } });
+cv.addEventListener('pointerleave', () => { if (hoverKey || hoverObj || hoverPile || hoverSign) { hoverKey = null; hoverObj = null; hoverPile = null; hoverSign = null; cv.classList.remove('pt'); kick(); } });
 cv.addEventListener('wheel', e => { e.preventDefault(); kick(); zoomAt(Math.exp(-e.deltaY * .0015), e.clientX, e.clientY); }, { passive: false });
 function swapSeat(key, target) {
   const e = M.ents.get(key), from = M.seats.get(e.seatKey), other = target.occ && target.occ !== e ? target.occ : null;
@@ -3671,7 +3705,10 @@ window.__office = {
   peerTvScreen: pid => (wallObj('tv:' + pid) ? wallScreen('tv:' + pid) : null),
   proj: (x, y, z) => t2s(x, y, z), ops: () => OPS, opsSet: o => { OPS.setObject(o); kick(); }, opsTv: () => (wallObj('tv') ? wallScreen('tv') : null),
   wallQuads: () => Object.fromEntries(wallKeys().filter(key => wallRoom(key) === 'lobby' && wallObj(key)).map(key => [key, wallScreen(key)])),
-  signRect: (id, plain) => { const r = M.rooms.get(id); if (!r) return null; const g = signGeom(r, plain); return { x: g.x0, y: g.p.y - g.h / 2, w: g.w, h: g.h }; },
+  signRect: (id, plain) => { const g = signLayout(plain).get(id); return g ? { x: g.x0, y: g.p.y - g.h / 2, w: g.w, h: g.h, dot: g.dot, text: g.main } : null; },
+  blockSigns: rects => { SIGN_BLOCK = rects || []; kick(); },
+  signs: () => SIGN_LOG.map(g => ({ ...g })), pills: () => PILL_LOG.map(g => ({ ...g })), hoverSign: () => hoverSign, signRooms: () => [...SIGNS.keys()],
+  allWallQuads: () => Object.fromEntries(wallKeys().filter(key => wallObj(key)).map(key => [key, wallScreen(key)])), lodFar: () => lodFar,
   objects: () => OBJ.state(), objOpen: (id, o) => OBJ.open(id, o), objClose: () => OBJ.close(),
   objPoint: id => { const h = OBJ.hull('obj:' + id, t2s); if (!h.length) return null; return { x: h.reduce((a, p) => a + p.x, 0) / h.length, y: h.reduce((a, p) => a + p.y, 0) / h.length }; },
   wallAt: (sx, sy) => wallObjAt(sx, sy), hoverTip: () => (hoverObj && wallObj(hoverObj) ? wallObj(hoverObj).name : ''), viewScope: () => vscope,
