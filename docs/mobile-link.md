@@ -238,6 +238,8 @@ bot 名單（`bots[]`，給對話畫面的 `#` 用，放進去的是 A2A 的 `<�
 
 **`GET /link/tasks?rev=<上次的 rev>`**（桌面版的辦公室看另一台的任務白板用，`link_bots.PeerTasks`）：這台的三份清單，跟桌面的 `tasks_overview` 同一組列：`{"ok": true, "rev", "decisions": […], "stuck": […], "open": […]}`（`open` 最多 100 筆，文字寫入時已遮蔽）；`rev` 沒變就只回 `{"ok": true, "rev", "unchanged": true}`（`rev` 不含一直在長的 `idle_s`）；任務資料庫打不開回 `{"ok": false, "code"}`。權限跟 `/link/bots` 完全一樣：單向配對裡不能操作這台的一方得到 403，舊版本沒有這條路由是 404。
 
+**`GET /link/ops`、`GET /link/ops/view?lang=&sort=`、`POST /link/ops/live {"on"}`**（桌面版的辦公室看另一台的維運戰情電視用，`link_ops.py`，唯讀）：`/link/ops` 回這台的摘要 `{"success": true, "level", "reason", "since", "muted_until", "updated", "face"}`（`level` 是 `ok`／`warn`／`alert`／`muted`／`none`，這台沒打開維運戰情時是 `off`，其餘欄位為 null）；`/link/ops/view` 回詳細畫面（八種元件，`rules` 元件帶 `"readonly": true`，沒有靜音或改規則的動作；`sort` 是 `auto`／`cpu`／`mem`，只決定這一次回答裡前 5 名的順序，不會存在這台）；`/link/ops/live` 讓這台進入／離開 2 秒即時，60 秒沒再說就自己結束，每個來源分開算（對方關掉不會結束這台自己開著的視窗）。這台沒打開維運戰情時，後兩條回 `{"success": false, "code": "off"}`。權限跟 `/link/bots` 完全一樣：單向配對裡不能操作這台的一方得到 403，舊版本沒有這幾條路由是 404。
+
 **`POST /link/answer {"sid", "n", "id"}`**：回答 `/link/bots` 給的那一題。
 
 - **只在 `id` 還是那個分頁現在的題目時才送。** 成功回 `{"success": true}`。送法跟 Telegram 的選擇按鈕一樣（`tab_delivery.answer_choice`）：

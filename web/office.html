@@ -1255,7 +1255,8 @@ function drawRoomShell(x, r, far) {
     if (r.h > 4) wallFace(x, r.x, r.y, r.x, r.y + r.h, Hh, 2, null, teamCol(r.team));
   } else { const pe = M.peers.get(r.peerId), hasB = !!(pe && pe.boardState);
     wallFace(x, r.x, r.y, r.x + r.w, r.y, Hh, 3, i => i === 0 || (hasB && i === 1), COL.teal);                    // 有白板的房間：中間那扇窗讓給白板
-    if (hasB) drawPeerBoard(x, r, pe); }
+    if (hasB) drawPeerBoard(x, r, pe);
+    if (pe) drawPeerTV(x, r, pe); }
 }
 
 /* ══════════ 7. 家具與人物（近景）══════════ */
@@ -2074,7 +2075,8 @@ const ARRG = OfficeArrange.create({   // 整理位置：把隔壁電腦的房間
 // 只有 experimental_ops 開著、registry 有 ops 物件時才有（OPS.active()）；畫面開著時，後端每 2 秒量一次，關掉就回到每 5 分鐘。
 const OPS = OfficeOps.create({
   tr, doc: document, kick: () => kick(), rm: RM,
-  host: HOST ? { view: id => HOST.objects.view(id), live: (id, on) => HOST.objects.live(id, on), action: (id, iid, aid, args) => HOST.objects.action(id, iid, aid, args) } : OfficeOps.demoHost(tr),
+  host: HOST ? { view: id => HOST.objects.view(id), live: (id, on) => HOST.objects.live(id, on), action: (id, iid, aid, args) => HOST.objects.action(id, iid, aid, args),
+                 peerView: (pid, sort) => HOST.objects.peerView(pid, sort), peerLive: (pid, on) => HOST.objects.peerLive(pid, on) } : OfficeOps.demoHost(tr),
   beforeOpen() { if (view) closeView(true); if (follow) stopFollow(true); OBJ.close(); hoverObj = null; hoverKey = null; cv.classList.remove('pt'); },
   changed: () => { if (HOST && HOST.objectsChanged) HOST.objectsChanged(); kick(); },
 });
@@ -2124,16 +2126,22 @@ function setLoops(list) {
 }
 // 畫與點用同一個四邊形（螢幕座標）
 // 牆上的東西：大廳的 'board'、'cal'（固定在 WALL_OBJ），和每台有白板的隔壁電腦後牆上的 'board:<電腦 id>'（跟著那間房，房間移動時一起動）
+const peerBoardQ = r => { const x0 = r.x + 2.75; return [x0, r.y, x0 + clamp(r.w - 5.45, 2.6, 3.6), r.y, 0, 1, 16, 38]; };   // 隔壁電腦的白板：門（1.2～2.3）和機櫃之間；窗讓出來（drawRoomShell）
 function wallObj(k) {
   if (String(k).startsWith('obj:')) return OBJ.wall(k);
   if (WALL_OBJ[k]) return k === 'tv' && !OPS.active() ? null : WALL_OBJ[k];   // the TV is only there while the ops object is
+  const mt = /^tv:(.+)$/.exec(String(k));
+  if (mt) {                                                                                  // 隔壁電腦後牆上的小電視（維運戰情）：白板右邊、機櫃左邊；本機的維運開著才有
+    const pe = M.peers.get(mt[1]), r = pe && OPS.active() ? M.rooms.get('peer:' + pe.id) : null; if (!r) return null;
+    const x0 = peerBoardQ(r)[2] + .1;                                                       // 白板之後、機櫃（r.w - .75，3D 裡它擋得到右邊的牆）之前；1.05 寬、z 18–36：不壓到白板、機櫃、門和桌上的螢幕（測試量過）
+    return { name: tr('Ops board · ', '維運戰情 · ') + pe.name, q: [x0, r.y, x0 + 1.05, r.y, 0, 1, 18, 36], room: r.id };
+  }
   const m = /^board:(.+)$/.exec(String(k)), pe = m && M.peers.get(m[1]), r = pe && pe.boardState ? M.rooms.get('peer:' + pe.id) : null;
   if (!r) return null;
-  const x0 = r.x + 2.75;                                                                    // 門（1.2～2.3）和機櫃之間；窗讓出來（drawRoomShell）
-  return { name: pe.name + ' 的白板', q: [x0, r.y, x0 + clamp(r.w - 5.45, 2.6, 3.6), r.y, 0, 1, 16, 38], room: r.id };
+  return { name: pe.name + ' 的白板', q: peerBoardQ(r), room: r.id };
 }
-const wallRoom = k => (WALL_OBJ[k] || String(k).startsWith('obj:') ? 'lobby' : 'peer:' + String(k).slice(6));
-const wallKeys = () => [...OBJ.keys(), 'cal', 'board', ...(OPS.active() ? ['tv'] : []), ...[...M.peers.keys()].map(id => 'board:' + id)];
+const wallRoom = k => (WALL_OBJ[k] || String(k).startsWith('obj:') ? 'lobby' : 'peer:' + String(k).replace(/^(board|tv):/, ''));
+const wallKeys = () => [...OBJ.keys(), 'cal', 'board', ...(OPS.active() ? ['tv'] : []), ...[...M.peers.keys()].map(id => 'board:' + id), ...(OPS.active() ? [...M.peers.keys()].map(id => 'tv:' + id) : [])];
 const wallScreen = k => String(k).startsWith('obj:') ? OBJ.hull(k, t2s) : wq(...wallObj(k).q).map(p => ({ x: (p.x - cam.x) * cam.z + W / 2, y: (p.y - cam.y) * cam.z + H / 2 }));
 const inPoly = (pts, px, py) => { let r = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) if ((pts[i].y > py) !== (pts[j].y > py) && px < (pts[j].x - pts[i].x) * (py - pts[i].y) / (pts[j].y - pts[i].y) + pts[i].x) r = !r; return r; };
 function wallObjAt(sx, sy) {
@@ -2143,7 +2151,7 @@ function wallObjAt(sx, sy) {
 }
 const viewKey = () => (view ? (vscope ? view + ':' + vscope : view) : null);
 function wallOutline(x, k) {
-  const on = viewKey() === k || (k === 'tv' && OPS.isOpen()); if (hoverObj !== k && !on) return;
+  const on = viewKey() === k || (k === 'tv' && OPS.isOpen() && !OPS.peerOpen()) || (k.startsWith('tv:') && OPS.peerOpen() === k.slice(3)); if (hoverObj !== k && !on) return;
   const q = wallObj(k).q; poly(x, wq(q[0], q[1], q[2], q[3], -.03, 1.03, q[6] - 2, q[7] + 2), null, on ? COL.blue : 'rgba(192,202,245,.7)', on ? 2 : 1.6);
 }
 function drawPeerBoard(x, r, pe) {                 // 隔壁電腦後牆的小白板：同樣的白板、便利貼（最多 7 張，2 排）；右上角的紅點是任務數
@@ -2155,6 +2163,11 @@ function drawPeerBoard(x, r, pe) {                 // 隔壁電腦後牆的小�
   if (live) pe.notes.forEach((col, i) => { const c4 = i % 4, row = (i / 4) | 0, u = .07 + c4 * .235, z = q[7] - 4 - row * 9; poly(x, wq(q[0], q[1], q[2], q[3], u, u + .17, z - 7, z), alpha(col, .85)); });
   const n = live && pe.board ? pe.board.all.length : 0;
   if (n) { const p = P(q[2], q[3], q[7] - 1); ellipse(x, p.x, p.y, 7.4, 7.4, COL.red, '#e6e9f5', 1.4); x.font = `700 ${n > 9 ? 8 : 9.5}px ${FONT}`; x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(n > 9 ? '9+' : String(n), p.x, p.y + .6); }
+  wallOutline(x, k);
+}
+function drawPeerTV(x, r, pe) {                    // 隔壁電腦後牆的小電視：那台的維運摘要（等級顏色＋三條讀數＋磁碟）；沒有東西可看就畫灰色寫原因
+  const k = 'tv:' + pe.id, o = wallObj(k); if (!o) return;
+  OPS.drawPeer(x, { P, poly, wq, ellipse, COL, FONT, alpha, T, q: o.q }, pe.ops);
   wallOutline(x, k);
 }
 function drawLobbyBoard(x) {                       // 白板＋便利貼（一件進行中的任務一張，最多 7 張；沒有任務就是空白板）
@@ -2813,6 +2826,8 @@ function renderView(force) {
 function openView(key) {                                 // key：'board'、'cal'，或 'board:<電腦 id>'（那台電腦的白板）；'obj:<id>'：牆邊的家具（共用蓋板）
   if (String(key).startsWith('obj:')) { OBJ.open(String(key).slice(4)); return; }
   if (key === 'tv') { OPS.toggle(); return; }         // the ops TV: its own window (web/office_ops.js)
+  const mtv = /^tv:(.+)$/.exec(String(key));
+  if (mtv) { const pe = M.peers.get(mtv[1]); if (pe && wallObj(key)) OPS.openPeer(pe.id, pe.name); return; }   // a paired computer's TV: the same window, read through that computer
   OBJ.close(); OPS.close();
   const m = /^board:(.+)$/.exec(String(key)), kind = m ? 'board' : key, scope = m ? m[1] : null;
   if (!wallObj(key) && !(BOARD_ONLY && kind === 'board' && (!scope || (M.peers.get(scope) && M.peers.get(scope).boardState)))) return;   // 只有白板：沒有地板可以點，也就沒有牆上的東西，照樣開
@@ -3385,6 +3400,7 @@ function update(snap, opts = {}) {
     const seenP = new Set();
     for (const p of snap.peers) { if (!p || p.id == null) continue; const pid = String(p.id); seenP.add(pid);
       let pe = M.peers.get(pid); if (!pe) { pe = { id: pid, name: p.name || pid, assign: new Map(), primaryKey: '', primaryName: '', board: null, boardJson: '', boardVer: 0, boardState: '', boardSig: '', bAt: 0, notes: [], notesAt: 0 }; M.peers.set(pid, pe); } pe.name = p.name || pid;
+      pe.ops = p.ops && typeof p.ops === 'object' ? p.ops : null;     // that computer's ops summary (office.js refreshPeerOps); none yet = the TV says it is reading
       if (p.board && typeof p.board === 'object') setPeerBoard(pe, p.board, p.boardState, p.boardAt); else clearPeerBoard(pe);   // 那台的白板（沒有 = 舊版或沒問到：房裡不畫白板）
       const seen = new Set();
       for (const [list, kind] of [[p.bots || [], 'peer'], [p.temps || [], 'peertemp']]) for (const r of list) { if (!r || r.id == null) continue; const id = String(r.id), key = (kind === 'peer' ? 'p:' : 'q:') + pid + '/' + id; seen.add(key);
@@ -3651,6 +3667,8 @@ window.__office = {
   deskInfo: key => { const d = deliverInfo(M.ents.get(key)); return d ? { count: d.count, new: d.new, types: [...d.types] } : null; }, entGone: key => { const e = M.ents.get(key); return e ? !!e.gone : null; },
   camTo: key => { const e = M.ents.get(key), p = e && deskTopOf(e); if (!p) return false; const q = P(p.x, p.y, p.z); goal = null; followCam = false; Object.assign(cam, { x: q.x, y: q.y, z: 1.5 }); kick(); return true; },
   pileAt: key => { const p = PILES.get(key); return p ? { x: p.x, y: p.y, r: p.r } : null; }, piles: () => [...PILES.keys()], pileTip: () => (hoverPile ? pileName(hoverPile) : ''),
+  peerWall: pid => { const r = M.rooms.get('peer:' + pid), t = wallObj('tv:' + pid); return r ? { room: { x: r.x, y: r.y, w: r.w, h: r.h, wallH: r.wallH }, board: peerBoardQ(r), tv: t ? t.q : null, rack: decorOf(r).filter(d => d.kind === 'rack') } : null; },
+  peerTvScreen: pid => (wallObj('tv:' + pid) ? wallScreen('tv:' + pid) : null),
   proj: (x, y, z) => t2s(x, y, z), ops: () => OPS, opsSet: o => { OPS.setObject(o); kick(); }, opsTv: () => (wallObj('tv') ? wallScreen('tv') : null),
   wallQuads: () => Object.fromEntries(wallKeys().filter(key => wallRoom(key) === 'lobby' && wallObj(key)).map(key => [key, wallScreen(key)])),
   signRect: (id, plain) => { const r = M.rooms.get(id); if (!r) return null; const g = signGeom(r, plain); return { x: g.x0, y: g.p.y - g.h / 2, w: g.w, h: g.h }; },

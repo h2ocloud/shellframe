@@ -203,6 +203,7 @@
                  (loop: the tab's status `loop`, a /loop or cron routine it runs, or null)
        tasks     tasks_overview(): {decisions: [...], open: [...], stuck: [...]}
        peers     SFBots.peerBots(): pid → {name, primary, bots: [/link/bots rows], tabs: {rsid: tab}}
+       peerOps    pid → what refreshPeerOps kept of ops_peer ({state, level, reason, since, muted_until, updated, face, at}); a peer listed there carries `ops`
        peerTasks link_peer_tasks's `peers`: pid → {state, at, decisions, stuck, open}; a peer listed there carries board, boardState, boardAt
        helpers   office_helpers().helpers: sid → [{id, description, model, agent_type, state, started_at, last_at}]
        seen      sid → first time this page saw the tab (ms); filled in for new ones (an intern's opened_at)
@@ -263,7 +264,7 @@
           return { id: r, name: String(tb.name || r), cli: CLI_NAMES[tb.cli] || String(tb.cli || '?'), state: peerState(tb),
                    doing: clip(tb.latest, 120), opened_at: iso(ROSTER_EPOCH + i * 1000) };
         }),
-      }, peerBoardOf(pid, p, (I.peerTasks || {})[pid], now));
+      }, peerBoardOf(pid, p, (I.peerTasks || {})[pid], now), (I.peerOps || {})[pid] ? { ops: I.peerOps[pid] } : {});
     });
     const helpers = [];
     const parentOf = {};
@@ -642,6 +643,17 @@
       if (!a || !a.office_object_live) return { success: false };
       try { const r = await a.office_object_live(String(id), !!on); return (typeof r === 'string' ? JSON.parse(r) : r) || { success: false }; } catch (e) { return { success: false }; }
     },
+    // A paired computer's ops window (ops_peer_view / ops_peer_live: the peer's own answer, cleaned here; `sort` is the top five's order for that answer)
+    async peerView(pid, sort) {
+      const a = api();
+      if (!a || !a.ops_peer_view) return { success: false, code: 'old' };
+      try { return JSON.parse(await a.ops_peer_view(String(pid), isZh() ? 'zh' : 'en', String(sort || ''))) || { success: false }; } catch (e) { return { success: false, code: 'offline' }; }
+    },
+    async peerLive(pid, on) {
+      const a = api();
+      if (!a || !a.ops_peer_live) return { success: false };
+      try { return JSON.parse(await a.ops_peer_live(String(pid), !!on)) || { success: false }; } catch (e) { return { success: false }; }
+    },
   };
   // The deliverables' counts ride on tasks_overview (the 9 s read above): the desks and the toolbar number follow without waiting for the
   // 30 s object refresh. Only the numbers: the object's list and entries are asked of the backend when the popup opens.
@@ -689,7 +701,7 @@
 
   let overlay = null, frame = null, timer = 0, busy = false, lastPush = null, boardMode = false, boardFocus = null;
   let objs = [], objsAt = 0;
-  let tasks = { open: [], stuck: [], decisions: [] }, tasksAt = 0, helpers = {}, peerTasks = {}, peerTasksAt = 0;
+  let tasks = { open: [], stuck: [], decisions: [] }, tasksAt = 0, helpers = {}, peerTasks = {}, peerTasksAt = 0, peerOps = {}, peerOpsAt = 0, peerOpsBusy = false;
   const seen = {}, mem = {};
   const TICK_MS = 3000, TASKS_MS = 9000;
 
@@ -714,12 +726,34 @@
     const B = root.SFBots || {}, st = (B.state && B.state()) || {};
     const snap = build({
       botsOn: !!(B.enabled && B.enabled()), roster: st.roster || {}, primary: st.primary || '',
-      tabs: pageTabs(), tasks, peers: (B.peerBots && B.peerBots()) || {}, peerTasks, helpers, seen,
+      tabs: pageTabs(), tasks, peers: (B.peerBots && B.peerBots()) || {}, peerTasks, peerOps, helpers, seen,
       kit: { palette: B.PALETTE || {}, shapes: Object.keys(B.SHAPES || {}), defaultAvatar: B.defaultAvatar },
       now: Date.now(),
     });
     snap.objects = clone(objs);
     return track(mem, snap, Date.now());
+  }
+  // The paired computers' ops summaries (their small TVs on the room walls): each one asked once a minute while the office is open, only while
+  // this computer's own ops board is on (it is in the objects) and never for the board alone. Not awaited by the tick: a computer that does not
+  // answer takes up to 6 s, and the 3 s push must not wait for it. A failure keeps the last good summary for 150 s, then the TV says why it is grey.
+  const peerOpsTiming = { every: 60000, keep: 150 };                  // a test shortens them
+  function peerOpsState(prev, r, now) {
+    if (r && r.success) return Object.assign({ state: 'ok', at: now }, r);
+    const code = r && r.code, state = code === 'old' || code === 'denied' || code === 'offline' ? code : 'error';
+    if ((state === 'offline' || state === 'error') && prev && prev.state === 'ok' && now - prev.at < peerOpsTiming.keep) return prev;     // a blip: the last summary stays
+    return { state: state === 'error' ? 'offline' : state, at: now };
+  }
+  function refreshPeerOps() {
+    const a = api();
+    if (!a || !a.ops_peer || boardMode || peerOpsBusy || Date.now() - peerOpsAt < peerOpsTiming.every || !objs.some(o => o.id === 'ops')) return;
+    const B = root.SFBots, pids = Object.keys((B && B.peerBots && B.peerBots()) || {});
+    peerOpsAt = Date.now(); peerOpsBusy = true;
+    Promise.all(pids.map(async pid => {
+      let r = null;
+      try { r = JSON.parse(await a.ops_peer(pid, isZh() ? 'zh' : 'en')); } catch (_) { r = null; }
+      if (!overlay || (r && r.code === 'off')) return;               // closed meanwhile, or this computer's own switch went off
+      peerOps[pid] = peerOpsState(peerOps[pid], r, Date.now() / 1000);
+    })).then(() => { for (const pid of Object.keys(peerOps)) if (pids.indexOf(pid) < 0) delete peerOps[pid]; }).catch(() => {}).then(() => { peerOpsBusy = false; });
   }
   async function refreshData() {
     const a = api();
@@ -738,6 +772,7 @@
       try { const r = JSON.parse(await a.link_peer_tasks()); if (r && r.peers && typeof r.peers === 'object') { peerTasks = r.peers; if (root.SFBoard && root.SFBoard.notePeers) root.SFBoard.notePeers(r.peers); } } catch (_) {}
     }
     await refreshObjects(false);
+    refreshPeerOps();
     if (a.office_helpers && !boardMode) {          // the floor's part-timers: not asked for by the board alone (and refused with the switch off)
       try { const r = JSON.parse(await a.office_helpers()); if (r && r.success) helpers = r.helpers || {}; } catch (_) {}
     }
@@ -772,7 +807,7 @@
     }
     if (overlay || (!bo && !enabled())) return;
     boardMode = bo;
-    tasksAt = 0; peerTasksAt = 0; peerTasks = {}; objsAt = 0; objs = [];   // a freshly opened office asks again, not on the last open's answer
+    tasksAt = 0; peerTasksAt = 0; peerTasks = {}; peerOps = {}; peerOpsAt = 0; objsAt = 0; objs = [];   // a freshly opened office asks again, not on the last open's answer
     overlay = document.createElement('div');
     overlay.id = 'sfo-overlay';
     overlay.tabIndex = -1;
@@ -906,7 +941,7 @@
   }
   root.SFOffice = Object.assign({ host: officeHost, open, close, isOpen: () => !!overlay, isBoard: () => !!overlay && boardMode,
                                   openBoard, toggleBoard, refresh: tick, boardRows,
-                                  lastSnapshot: () => clone(lastPush), placeButton }, pure);
+                                  lastSnapshot: () => clone(lastPush), placeButton, peerOpsTiming }, pure);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => boot(0));
   else boot(0);
 })(typeof window !== 'undefined' ? window : globalThis);

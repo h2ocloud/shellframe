@@ -11,6 +11,12 @@
  *   ctl.draw(x, g)          the TV on the wall: g = { P, poly, wq, ellipse, COL, FONT, alpha, T, q } (office.html passes them)
  *   ctl.open() / close() / toggle() / esc() / isOpen()
  *   ctl.timing              { hb, minRefresh }  the heartbeat (30 s) and the shortest refresh the window accepts; a test shortens them
+ *   ctl.drawPeer(x, g, o)   a paired computer's small TV on its room's back wall (g as for draw; o = what the page kept of its
+ *                           ops_peer answer: {state, level, reason, face, updated, ...}); a peer that is off / older / out of
+ *                           reach / without data is drawn grey with the reason in words
+ *   ctl.openPeer(pid, name) / peerOpen()   the same detail window for that computer: titled with its name, read through
+ *                           host.peerView(pid, sort) and kept live with host.peerLive(pid, on); the rules are shown, not
+ *                           changeable (and say where to change them), there is no mute, the top five's order can be switched
  *
  * The detail window draws eight kinds of widget (gauge, bars, stack, spark, strip, table, stat, rules); a kind it does not know is
  * left out, a missing field is a blank, never an error. While it is open the backend is told so (live on, a heartbeat every 30 s,
@@ -154,6 +160,77 @@
     x.fillStyle = 'rgba(192,202,245,.55)'; x.font = `500 12px ${FONT}`; x.textBaseline = 'alphabetic'; x.textAlign = 'left';
     x.fillText(fitText(x, [disk == null ? '' : tr(`Disk ${Math.round(disk)}% free`, `磁碟剩 ${Math.round(disk)}%`), age].filter(Boolean).join('  ·  '), 176, 12, 500, FONT, 9), 10, H - 5);
   }
+  // ── a paired computer's small TV: the same colours, three bars and the disk line; grey with the reason in words when there is nothing to show ──
+  const GRAY = { off: ['Ops is off there', '那台沒打開維運戰情'], old: ['Older version there', '那台版本較舊'], offline: ['Cannot reach it', '連不上'],
+    none: ['No data yet', '還沒有資料'], denied: ['Not shared with you', '那台沒有開放給這台看'], pending: ['Reading…', '讀取中…'] };
+  const PEER_STATES = new Set(['ok', 'off', 'old', 'offline', 'none', 'denied', 'error', 'pending']);
+  function peerNorm(o) {
+    const raw = o && typeof o === 'object' ? o : null;
+    let state = raw ? (PEER_STATES.has(raw.state) ? raw.state : 'error') : 'pending';
+    const lv = raw && raw.level === 'off' ? 'off' : raw && LEVELS.has(raw.level) ? raw.level : 'none';
+    if (state === 'ok' && (lv === 'off' || lv === 'none')) state = lv;
+    if (state === 'error') state = 'offline';
+    const t = tvState(state === 'ok' ? raw : null);
+    return Object.assign(t, { mini: true, gray: state === 'ok' ? '' : state, level: state === 'ok' ? t.level : 'none' });
+  }
+  function drawMini(x, st, g, H) {
+    const tr = g.tr, FONT = g.FONT, lv = st.level, pal = PAL[lv], f = st.face, bad = lv === 'alert', warn = lv === 'warn', dim = lv === 'muted';
+    const pulse = g.rm ? 1 : .6 + .4 * Math.sin(g.T * 3.2), compact = H < 96, hh = Math.round(H * (bad || warn ? .3 : .24));
+    x.fillStyle = pal.bg; x.fillRect(0, 0, FW, H); x.textBaseline = 'middle'; x.textAlign = 'left';
+    if (st.gray) {
+      x.fillStyle = '#6b7399'; x.beginPath(); x.arc(15, hh / 2 + 2, 5, 0, 6.3); x.fill();
+      x.fillStyle = '#9aa5ce'; x.font = `700 ${Math.round(H * .15)}px ${FONT}`; x.fillText(tr('Ops', '維運'), 28, hh / 2 + 2);
+      const w = GRAY[st.gray] || GRAY.none; x.fillStyle = '#c0caf5'; x.textAlign = 'center';
+      x.fillText(fitText(x, tr(w[0], w[1]), FW - 24, Math.round(H * .24), 800, FONT, 12), FW / 2, H * (compact ? .6 : .62));
+      return;
+    }
+    const reason = st.reason || (bad ? tr('Something is wrong', '出了問題') : tr('Needs a look', '需要留意'));
+    if (compact && (bad || warn)) {                                   // the flat view's low, wide screen: the banner is all of it
+      x.fillStyle = bad ? `rgba(224,60,84,${.82 + .18 * pulse})` : 'rgba(224,175,104,.94)'; x.fillRect(0, 0, FW, H);
+      triangle(x, 20, H / 2, H * .24, bad ? '#fff' : '#2b2113');
+      x.fillStyle = bad ? '#fff' : '#2b2113';
+      x.fillText(fitText(x, reason, FW - 50, H * .5, 800, FONT, 11), 40, H / 2 + 1);
+      return;
+    }
+    const cpu = f ? num(f.cpu) : null, mem = f ? num(f.mem) : null, pr = f ? f.pressure : null, ni = f ? num(f.net_in) : null, off = !!(f && f.online === false);
+    const cpuCol = cpu != null && cpu > 90 ? '#ff6b86' : cpu != null && cpu > 70 ? '#e0af68' : '#7aa2f7';
+    const memCol = pr === 'critical' || (mem != null && mem > 92) ? '#ff6b86' : pr === 'warn' || (mem != null && mem > 80) ? '#e0af68' : '#9ece6a';
+    const rows = [[tr('CPU', 'CPU'), cpu, cpuCol, cpu == null ? '–' : Math.round(cpu) + '%'],
+      [tr('Memory', '記憶體'), mem, memCol, mem == null ? '–' : Math.round(mem) + '%'],
+      [tr('Network', '網路'), ni == null ? null : clamp(Math.log10(1 + ni) / 8, 0, 1) * 100, off ? '#ff6b86' : '#7dcfff', off ? tr('Offline', '離線') : '↓ ' + fmtRate(ni)]];
+    if (compact) {                                                    // three readings in a row, each with a bar under it
+      const fs = Math.max(10, H * .3), by = H - H * .22;
+      rows.forEach(([lab, v, col, txt], i) => {
+        const X = 10 + i * 100;
+        x.textAlign = 'left'; x.fillStyle = dim ? '#9aa5ce' : '#e8ecff'; x.font = `700 ${fs}px ${FONT}`;
+        x.fillText(fitText(x, i < 2 ? lab + ' ' + txt : txt, 90, fs, 700, FONT, 9), X, H * .36);
+        x.fillStyle = 'rgba(192,202,245,.14)'; x.fillRect(X, by, 86, 3);
+        if (v != null) { x.fillStyle = dim ? '#6b7399' : col; x.fillRect(X, by, 86 * clamp(v, 0, 100) / 100, 3); }
+      });
+      return;
+    }
+    if (bad || warn) {
+      x.fillStyle = bad ? `rgba(224,60,84,${.82 + .18 * pulse})` : 'rgba(224,175,104,.94)'; x.fillRect(0, 0, FW, hh);
+      triangle(x, 19, hh / 2, hh * .26, bad ? '#fff' : '#2b2113');
+      x.fillStyle = bad ? '#fff' : '#2b2113'; x.fillText(fitText(x, reason, FW - 46, Math.round(hh * .56), 800, FONT, 12), 36, hh / 2 + 1);
+    } else {
+      x.fillStyle = dim ? '#6b7399' : '#9ece6a'; x.beginPath(); x.arc(15, hh / 2, 5, 0, 6.3); x.fill();
+      x.fillStyle = '#d7defa'; x.font = `700 ${Math.round(hh * .62)}px ${FONT}`; x.fillText(tr('Ops', '維運'), 28, hh / 2 + 1);
+      x.fillStyle = dim ? '#e0af68' : 'rgba(192,202,245,.7)'; x.font = `600 ${Math.round(hh * .5)}px ${FONT}`; x.textAlign = 'right';
+      x.fillText(dim ? tr('Muted', '已靜音') : tr('All normal', '一切正常'), FW - 10, hh / 2 + 1);
+    }
+    const top = hh + 7, rh = (H - hh - 7 - 20) / 3, fs = Math.max(11, Math.round(rh * .62));
+    rows.forEach(([lab, v, col, txt], i) => {
+      const cy = top + rh * (i + .5);
+      x.textAlign = 'left'; x.fillStyle = dim ? '#8d94b8' : 'rgba(232,236,255,.85)'; x.font = `700 ${fs}px ${FONT}`; x.fillText(fitText(x, lab, 68, fs, 700, FONT, 10), 10, cy);
+      x.fillStyle = 'rgba(192,202,245,.14)'; x.fillRect(82, cy - 4, 124, 8);
+      if (v != null) { x.fillStyle = dim ? '#6b7399' : col; x.fillRect(82, cy - 4, 124 * clamp(v, 0, 100) / 100, 8); }
+      x.textAlign = 'right'; x.fillStyle = dim ? '#9aa5ce' : '#e8ecff'; x.font = `800 ${fs}px ${FONT}`; x.fillText(fitText(x, txt, 86, fs, 800, FONT, 10), FW - 8, cy);
+    });
+    const disk = f ? num(f.disk_free_pct) : null;
+    x.textAlign = 'left'; x.textBaseline = 'alphabetic'; x.fillStyle = 'rgba(192,202,245,.62)'; x.font = `600 ${Math.round(H * .11)}px ${FONT}`;
+    x.fillText(disk == null ? '' : tr(`Disk ${Math.round(disk)}% free`, `磁碟剩 ${Math.round(disk)}%`), 10, H - 5);
+  }
   // The TV on the wall: the glow (an alert only, and only pulsing when motion is allowed), the frame, the face, the red mark.
   function draw(x, g, st) {
     const q = g.q, bad = st.level === 'alert', pal = PAL[st.level], pulse = g.rm ? 1 : .7 + .3 * Math.sin(g.T * 3.2);
@@ -161,15 +238,15 @@
     const wLen = Math.hypot(ex.x - O.x, ex.y - O.y) * (q[2] - q[0]), hLen = Math.hypot(ez.x - O.x, ez.y - O.y) * (q[7] - q[6]);
     const fh = clamp(FW * hLen / Math.max(1, wLen), 40, FH), sz = (q[7] - q[6]) / fh;      // the face takes the quad's own shape: the flat view's screen is low and wide
     if (bad) {
-      const c = g.P((q[0] + q[2]) / 2, q[1], (q[6] + q[7]) / 2), gr = x.createRadialGradient(c.x, c.y, 6, c.x, c.y, 82);
+      const c = g.P((q[0] + q[2]) / 2, q[1], (q[6] + q[7]) / 2), ro = st.mini ? 44 : 82, gr = x.createRadialGradient(c.x, c.y, 4, c.x, c.y, ro);
       gr.addColorStop(0, `rgba(247,90,120,${.4 * pulse})`); gr.addColorStop(1, 'rgba(247,90,120,0)');
-      x.fillStyle = gr; x.fillRect(c.x - 96, c.y - 76, 192, 152);
+      x.fillStyle = gr; x.fillRect(c.x - ro - 14, c.y - ro + 6, 2 * ro + 28, 2 * ro - 12);
     }
     g.poly(x, g.wq(q[0] - .07, q[1], q[2] + .07, q[3], 0, 1, q[6] - 1.6, q[7] + 1.6), pal.frame, bad ? g.alpha(g.COL.red, .9) : pal.line, bad ? 1.6 : 1);
     const quad = g.wq(q[0], q[1], q[2], q[3], 0, 1, q[6], q[7]);
     x.save(); x.beginPath(); x.moveTo(quad[0].x, quad[0].y); for (const p of quad.slice(1)) x.lineTo(p.x, p.y); x.closePath(); x.clip();
     x.transform((ex.x - O.x) * sx, (ex.y - O.y) * sx, (ez.x - O.x) * sz, (ez.y - O.y) * sz, O.x, O.y);
-    try { drawFace(x, st, g, fh); } finally { x.restore(); }
+    try { (st.mini ? drawMini : drawFace)(x, st, g, fh); } finally { x.restore(); }
     g.poly(x, g.wq(q[0], q[1], q[2], q[3], 0, 1, q[7] - 6, q[7]), 'rgba(255,255,255,.035)');
     if (bad) {
       const b = g.P(q[2], q[1], q[7] + 2); g.ellipse(x, b.x, b.y, 7.4, 7.4, g.COL.red, '#e6e9f5', 1.4);
@@ -236,15 +313,15 @@
   const wStat = w => `<div class="op-stat op-t-${toneOf(w.tone)}">${w.label ? `<span class="op-cap">${esc(w.label)}</span>` : ''}<b>${esc(w.value)}</b>${w.sub ? `<em>${esc(w.sub)}</em>` : ''}</div>`;
   function wRules(w, T) {
     const items = arr(w.items).filter(i => i && typeof i.id === 'string');
-    const lvWord = l => (l === 'alert' ? T('Alert', '異常') : l === 'warn' ? T('Warning', '注意') : '');
-    return `<div class="op-rules">${items.map(i => {
+    const lvWord = l => (l === 'alert' ? T('Alert', '異常') : l === 'warn' ? T('Warning', '注意') : ''), ro = w.readonly === true, dis = ro ? ' disabled' : '';
+    return (ro ? `<p class="op-ro">${esc(T('Change these on that computer.', '要改請到那台電腦。'))}</p>` : '') + `<div class="op-rules${ro ? ' ro' : ''}">${items.map(i => {
       const hasV = num(i.value) != null, lab = String(i.label || i.id);
       return `<div class="op-rule${i.on ? '' : ' off'}" data-rule="${esc(i.id)}">` +
-        `<button type="button" class="op-sw${i.on ? ' on' : ''}" role="switch" aria-checked="${!!i.on}" data-op="rule-on" aria-label="${esc(lab)}"></button>` +
+        `<button type="button" class="op-sw${i.on ? ' on' : ''}" role="switch" aria-checked="${!!i.on}"${dis} data-op="rule-on" aria-label="${esc(lab)}"></button>` +
         `<span class="op-rl">${esc(lab)}</span>` +
-        (hasV ? `<span class="op-rv"><input type="number" class="op-num" data-op="rule-val" value="${esc(i.value)}"${num(i.min) != null ? ` min="${esc(i.min)}"` : ''}${num(i.max) != null ? ` max="${esc(i.max)}"` : ''}${num(i.step) != null ? ` step="${esc(i.step)}"` : ''} aria-label="${esc(lab)}${i.unit ? ' (' + esc(i.unit) + ')' : ''}">${i.unit ? `<em>${esc(i.unit)}</em>` : ''}</span>` : '') +
+        (hasV ? `<span class="op-rv"><input type="number" class="op-num" data-op="rule-val"${dis} value="${esc(i.value)}"${num(i.min) != null ? ` min="${esc(i.min)}"` : ''}${num(i.max) != null ? ` max="${esc(i.max)}"` : ''}${num(i.step) != null ? ` step="${esc(i.step)}"` : ''} aria-label="${esc(lab)}${i.unit ? ' (' + esc(i.unit) + ')' : ''}">${i.unit ? `<em>${esc(i.unit)}</em>` : ''}</span>` : '') +
         (lvWord(i.level) ? `<span class="op-lv op-t-${i.level === 'alert' ? 'bad' : 'warn'}">${esc(lvWord(i.level))}</span>` : '') + '</div>';
-    }).join('')}</div><button type="button" class="oo-btn op-reset" data-op="reset">${esc(T('Back to the defaults', '回到預設規則'))}</button>`;
+    }).join('')}</div>` + (ro ? '' : `<button type="button" class="oo-btn op-reset" data-op="reset">${esc(T('Back to the defaults', '回到預設規則'))}</button>`);
   }
   const KINDS = { gauge: wGauge, bars: wBars, stack: wStack, spark: wSpark, strip: wStrip, table: wTable, stat: wStat, rules: wRules };
   const widgetHtml = (w, T) => (w && typeof w === 'object' && Object.prototype.hasOwnProperty.call(KINDS, w.kind) ? `<div class="op-w op-w-${w.kind}">${KINDS[w.kind](w, T)}</div>` : '');
@@ -295,19 +372,24 @@
       veil.addEventListener('keydown', onKey);
       return veil;
     }
-    function open() {
+    // The window is this computer's, or (`target` = {pid, name}) a paired computer's: the same shell, read through the peer calls.
+    const liveCall = (tg, on) => call(tg ? host && host.peerLive : host && host.live, ...(tg ? [tg.pid, on] : [ID, on]));
+    function open(target) {
       if (!obj) return false;
-      if (S) return true;
+      const tg = target && target.pid ? { pid: String(target.pid), name: String(target.name || target.pid) } : null;
+      if (S && (S.target ? S.target.pid : '') === (tg ? tg.pid : '')) return true;
+      if (S) close();
       if (E.beforeOpen) E.beforeOpen();
       ensureVeil();
-      S = { seq: 0, view: null, sigs: [], bsig: '', grid: '', hb: 0, rt: 0, ok: true, ms: 2000, busy: false };
+      S = { seq: 0, view: null, sigs: [], bsig: '', grid: '', hb: 0, rt: 0, ok: true, ms: 2000, busy: false, target: tg, sort: '' };
       veil.hidden = false;
-      $('#opTitle').textContent = tr('Ops board', '維運戰情'); $('#opSub').textContent = tr('This computer', '這台電腦');
+      $('#opTitle').textContent = tg ? tr('Ops board · ', '維運戰情 · ') + tg.name : tr('Ops board', '維運戰情');
+      $('#opSub').textContent = tg ? tr('A paired computer (read only)', '隔壁電腦（唯讀）') : tr('This computer', '這台電腦');
       $('#opInner').innerHTML = `<div class="op-hint">${esc(tr('Reading…', '讀取中…'))}</div>`;
       $('#opMsg').textContent = '';
       paintLive(); paintNote(); paintButton();
-      call(host && host.live, ID, true);
-      S.hb = setInterval(() => { if (!doc.hidden) call(host && host.live, ID, true); }, timing.hb);
+      liveCall(tg, true);
+      S.hb = setInterval(() => { if (!doc.hidden) liveCall(tg, true); }, timing.hb);
       doc.addEventListener('visibilitychange', onVisible);
       root.addEventListener('pagehide', onHide);
       refresh();
@@ -318,18 +400,19 @@
     function close() {
       if (!S) return;
       clearInterval(S.hb); clearTimeout(S.rt); clearTimeout(msgTimer);
+      const tg = S.target;
       S = null;
       doc.removeEventListener('visibilitychange', onVisible);
       root.removeEventListener('pagehide', onHide);
-      call(host && host.live, ID, false);
+      liveCall(tg, false);
       if (veil) { veil.hidden = true; $('#opInner').innerHTML = ''; }
       paintButton(); kick();
       if (E.onClose) E.onClose();
     }
-    const toggle = () => (S ? close() : open());
+    const toggle = () => (S && !S.target ? close() : open(null));
     const esc2 = () => { if (!S) return false; close(); return true; };
-    function onHide() { if (S) call(host && host.live, ID, false); }
-    function onVisible() { if (!S || doc.hidden) return; call(host && host.live, ID, true); refresh(); }
+    function onHide() { if (S) liveCall(S.target, false); }
+    function onVisible() { if (!S || doc.hidden) return; liveCall(S.target, true); refresh(); }
 
     function paintLive() {
       const l = $('#opLive'); if (!l) return;
@@ -338,8 +421,9 @@
     }
     function paintNote() {
       const s = Math.max(1, Math.round((S.ms || 2000) / 1000));
-      $('#opNote').textContent = tr(`Live, every ${s} s. It is measured live only while this window is open; otherwise one reading every 5 minutes.`,
-        `即時，每 ${s} 秒更新。開著這個視窗才即時量；關掉後每 5 分鐘記一筆。`);
+      $('#opNote').textContent = S.target ? tr(`Live, every ${s} s. That computer measures live only while this window is open.`, `即時，每 ${s} 秒更新。開著這個視窗，那台才即時量。`)
+        : tr(`Live, every ${s} s. It is measured live only while this window is open; otherwise one reading every 5 minutes.`,
+          `即時，每 ${s} 秒更新。開著這個視窗才即時量；關掉後每 5 分鐘記一筆。`);
     }
     function say(text, bad) {
       const m = $('#opMsg'); if (!m) return;
@@ -351,14 +435,15 @@
       if (!S) return;
       const my = ++S.seq;
       let r = null;
-      try { r = await (host && host.view ? host.view(ID) : null); } catch (_) { r = null; }
+      const tg = S.target;
+      try { r = await (tg ? (host && host.peerView ? host.peerView(tg.pid, S.sort) : null) : (host && host.view ? host.view(ID) : null)); } catch (_) { r = null; }
       if (!S || my !== S.seq) return;
       if (r && r.success) {
         S.ok = true; S.view = r; S.ms = clamp(num(r.refresh_ms) || 2000, timing.minRefresh, 60000);
         paint(r);
       } else {
         S.ok = false;
-        if (!S.view) showError((r && r.message) || tr('The ops board is not available right now.', '維運戰情現在打不開。'));
+        if (!S.view) showError(tg && r && r.code && GRAY[r.code] ? tr(GRAY[r.code][0], GRAY[r.code][1]) : (r && r.message) || tr('The ops board is not available right now.', '維運戰情現在打不開。'));
       }
       paintLive(); paintNote();
       schedule();
@@ -379,16 +464,17 @@
     }
     function bannerHtml(v) {
       const b0 = v.banner && typeof v.banner === 'object' ? v.banner : null;
-      const b = b0 || { level: obj && LEVELS.has(obj.level) ? obj.level : 'none', text: obj && obj.reason ? obj.reason : '', since: null, rule: '' };   // no banner from the backend: the buttons still have to be there
-      const raw = LEVELS.has(b.level) ? b.level : 'none', muted = raw === 'muted' || !!(obj && (obj.level === 'muted' || (num(obj.muted_until) != null && obj.muted_until > nowS())));
+      const peer = !!(S && S.target), o = peer ? null : obj;               // a paired computer's banner says what it says: this computer's own level and mute are not its
+      const b = b0 || { level: o && LEVELS.has(o.level) ? o.level : 'none', text: o && o.reason ? o.reason : '', since: null, rule: '' };   // no banner from the backend: the buttons still have to be there
+      const raw = LEVELS.has(b.level) ? b.level : 'none', muted = raw === 'muted' || !!(o && (o.level === 'muted' || (num(o.muted_until) != null && o.muted_until > nowS())));
       const lv = muted ? 'muted' : raw;                           // a muted alert is shown quiet: the text still says why (and until when)
       const sub = [num(b.since) != null ? tr(`Since ${hhmm(b.since)}`, `${hhmm(b.since)} 起`) : '',
         b.rule && ruleLabel(v, b.rule) ? tr('Rule: ', '規則：') + ruleLabel(v, b.rule) : ''].filter(Boolean).join('  ·  ');
       const ic = ICON(lv === 'ok' ? 'check-circle' : lv === 'alert' || lv === 'warn' ? 'warn' : 'clock');
       return `<div class="op-banner b-${lv}" role="${lv === 'alert' ? 'alert' : 'status'}"><span class="op-bi" aria-hidden="true">${ic}</span>` +
         `<div class="op-bt"><b>${esc(b.text)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</div>` +
-        `<div class="op-ba">${raw === 'none' && !muted ? '' : muted ? `<button type="button" class="oo-btn" data-op="unmute">${esc(tr('Unmute', '取消靜音'))}</button>` : `<button type="button" class="oo-btn" data-op="mute">${esc(tr('Mute for 1 hour', '靜音 1 小時'))}</button>`}` +
-        `<button type="button" class="oo-btn" data-op="rules">${esc(tr('Adjust rules', '調整規則'))}</button></div></div>`;
+        `<div class="op-ba">${peer ? '' : raw === 'none' && !muted ? '' : muted ? `<button type="button" class="oo-btn" data-op="unmute">${esc(tr('Unmute', '取消靜音'))}</button>` : `<button type="button" class="oo-btn" data-op="mute">${esc(tr('Mute for 1 hour', '靜音 1 小時'))}</button>`}` +
+        (peer ? '' : `<button type="button" class="oo-btn" data-op="rules">${esc(tr('Adjust rules', '調整規則'))}</button>`) + '</div></div>';
     }
     // Patch only what changed: the banner, then each section by its markup. A section with a field in focus is left alone this round.
     function paint(v) {
@@ -459,26 +545,31 @@
         const sec = veil.querySelector('.op-sec[data-sec="rules"]') || veil.querySelector('.op-rule');
         if (sec) { sec.scrollIntoView({ block: 'center', behavior: 'smooth' }); sec.classList.remove('flash'); void sec.offsetWidth; sec.classList.add('flash'); const i = sec.querySelector('.op-sw, .op-num'); if (i) try { i.focus({ preventScroll: true }); } catch (_) {} }
       } else if (op === 'switch') {
-        if (b.dataset.act && b.dataset.val) act(b.dataset.act, { by: b.dataset.val });
+        if (S.target) { if (b.dataset.val && b.dataset.val !== S.sort) { S.sort = b.dataset.val; S.force = true; refresh(); } }     // a paired computer: its answer in that order, nothing saved there
+        else if (b.dataset.act && b.dataset.val) act(b.dataset.act, { by: b.dataset.val });
       } else if (op === 'rule-on') {
+        if (S.target || b.disabled) return;
         const row = ruleRow(b); b.classList.toggle('on'); b.setAttribute('aria-checked', String(b.classList.contains('on'))); row.classList.toggle('off', !b.classList.contains('on'));
         sendRule(row);
       }
     }
     function onChange(ev) {
-      if (!S || !ev.target.matches || !ev.target.matches('[data-op="rule-val"]')) return;
+      if (!S || S.target || !ev.target.matches || !ev.target.matches('[data-op="rule-val"]')) return;
       sendRule(ruleRow(ev.target));
     }
     function onKey(ev) {
       if (!S) return;
       if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); return; }
-      if (ev.key === 'Enter' && ev.target.matches && ev.target.matches('[data-op="rule-val"]') && !ev.isComposing && ev.keyCode !== 229) { ev.preventDefault(); sendRule(ruleRow(ev.target)); }
+      if (!S.target && ev.key === 'Enter' && ev.target.matches && ev.target.matches('[data-op="rule-val"]') && !ev.isComposing && ev.keyCode !== 229) { ev.preventDefault(); sendRule(ruleRow(ev.target)); }
     }
     const btn = doc.getElementById('opsBtn');
     if (btn) btn.addEventListener('click', () => toggle());
 
-    return { setObject, active, state, draw: (x, g) => draw(x, Object.assign({ tr, now: nowS(), rm: !!E.rm }, g), tvState(obj)), open, close, toggle, esc: esc2, isOpen: () => !!S, timing,
-             find: () => obj };
+    const peerOpen = () => (S && S.target ? S.target.pid : null);
+    const openPeer = (pid, name) => (peerOpen() === String(pid) ? (close(), true) : open({ pid, name }));
+    return { setObject, active, state, draw: (x, g) => draw(x, Object.assign({ tr, now: nowS(), rm: !!E.rm }, g), tvState(obj)),
+             drawPeer: (x, g, o) => draw(x, Object.assign({ tr, now: nowS(), rm: !!E.rm }, g), peerNorm(o)), openPeer, peerOpen,
+             open: () => open(null), close, toggle: () => (S && !S.target ? close() : open(null)), esc: esc2, isOpen: () => !!S, timing, find: () => obj };
   }
 
   // A stand-in for the page's host when office.html is opened alone: the same shape the backend answers (demo numbers only).
@@ -503,10 +594,12 @@
           { id: 'cpu_high', label: T_('CPU above 90% for', 'CPU 超過 90% 連續'), on: true, value: 5, unit: T_('min', '分鐘'), level: 'warn', min: 1, max: 60, step: 1 },
           { id: 'net_down', label: T_('Network down for', '網路中斷超過'), on: false, value: 2, unit: T_('min', '分鐘'), level: 'warn', min: 1, max: 30, step: 1 }] }] }] };
   }
-  const demoHost = T => ({ view: async () => demoView(T, 'alert'), live: async () => ({ success: true }), action: async () => ({ ok: true, message: '' }) });
+  const demoHost = T => ({ view: async () => demoView(T, 'alert'), live: async () => ({ success: true }), action: async () => ({ ok: true, message: '' }),
+    peerView: async (pid, sort) => { const v = demoView(T, 'ok'); for (const s of v.sections) for (const w of s.widgets) { if (w.kind === 'rules') w.readonly = true; if (w.kind === 'table' && w.switch && sort) w.switch.value = sort; } return v; },
+    peerLive: async () => ({ success: true }) });
   const demoObject = (T, level) => Object.assign({ id: 'ops', title: T('Ops', '維運'), furniture: 'tv', place: 'lobby:wall', button: false, badge: level === 'alert' ? 1 : 0, filters: [], sorts: [], actions: [],
     hint: '', level: level || 'ok', reason: level === 'alert' || level === 'warn' ? T('Memory pressure high for 12 minutes', '記憶體壓力高 12 分鐘') : '', since: null, muted_until: level === 'muted' ? Math.floor(Date.now() / 1000) + 2400 : null, updated: Math.floor(Date.now() / 1000) - 20,
     face: level === 'none' ? null : { cpu: 23.5, mem: level === 'alert' ? 93 : 61, pressure: level === 'alert' ? 'critical' : 'normal', net_in: 1.2e6, net_out: 3e5, online: true, disk_free_pct: 38, spark: [55, 57, 60, 61, 64, 70, 78, 93] } });
 
-  root.OfficeOps = { create, demoView, demoHost, demoObject, tvState, fmtBytes, fmtRate, KINDS: Object.keys(KINDS) };
+  root.OfficeOps = { create, demoView, demoHost, demoObject, tvState, peerNorm, GRAY, fmtBytes, fmtRate, KINDS: Object.keys(KINDS) };
 })(typeof window !== 'undefined' ? window : globalThis);

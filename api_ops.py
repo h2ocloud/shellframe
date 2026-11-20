@@ -11,6 +11,13 @@ those):
                                     its slow pace by itself
   ops_state()                       {"on", "level", "reason", "since"}: memory only, cheap; the sidebar's red dot
 
+  ops_peer(peer_id, lang) / ops_peer_view(peer_id, lang, sort) / ops_peer_live(peer_id, on)
+                                    a paired computer's TV (link_ops.py asks its signed /link/ops routes): the summary
+                                    {level, reason, since, muted_until, updated, face} (level `off`: its switch is off), the detail
+                                    screen (rules read-only), and the 2 s signal. A failure is {success: false, code}: `old` (no
+                                    such route there), `offline`, `denied` (one-way pairing), `error`. Asked only while this
+                                    computer's own switch is on (else `code: "off"`)
+
 and the collector's life: `_ops_start` (app start) and `_ops_sync` (the settings were saved, or any call here
 sees the flag differ) start or stop the collector to match the flag. While the flag is off nothing runs and
 every call answers `code: "off"`. When the level changes the collector thread calls `_ops_push`, which tells the
@@ -18,6 +25,7 @@ page (`window.__sfOpsLevel`); that thread holds no lock and the page call is `ev
 """
 import json
 
+import link_ops
 import office_objects
 import office_ops
 import sf_lang
@@ -104,3 +112,20 @@ class OpsApiMixin:
             return self._ops_json({"success": False, "code": "unknown", "message": office_objects.words("unknown")})
         office_ops.collector().live(on is True or str(on).lower() == "true")
         return self._ops_json({"success": True})
+
+    # ── a paired computer's TV (link_ops.py) ──
+    def _link_ops(self, cmd: str, args: dict) -> dict:
+        """The answer to a paired computer's /link/ops route (api_remote's dispatcher)."""
+        return link_ops.serve(self._ops_sync(), cmd, args)
+
+    def ops_peer(self, peer_id: str, lang: str = "") -> str:
+        off = self._ops_off(lang)
+        return off or self._ops_json(link_ops.peer_summary(self._link(), str(peer_id), lang))
+
+    def ops_peer_view(self, peer_id: str, lang: str = "", sort: str = "") -> str:
+        off = self._ops_off(lang)
+        return off or self._ops_json(link_ops.peer_view(self._link(), str(peer_id), lang, str(sort or "")))
+
+    def ops_peer_live(self, peer_id: str, on: bool = True) -> str:
+        off = self._ops_off("")
+        return off or self._ops_json(link_ops.peer_live(self._link(), str(peer_id), on is True or str(on).lower() == "true"))
