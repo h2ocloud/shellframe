@@ -622,8 +622,9 @@ the sheet has a 這台 / 隔壁：<computer> switcher; a paired computer's board
 The lobby wall's TV is the ops TV, behind its own switch, `experimental_ops` (off by default; Settings → Office). It shows how
 this computer is doing (CPU per core, memory and its pressure, swap, network speed, free disk) and turns red when something stays
 wrong: memory pressure "high" for 10 minutes, CPU over 90% for 5, disk under 10% free, swap growing by more than 2 GB in half an
-hour, CPU temperature at 90°C or more for 5 minutes, GPU temperature at 85°C or more for 5 (the person can change each number of
-minutes or switch a rule off in the TV's detail screen). The face also shows the CPU and GPU temperature ("CPU 46° · GPU 43°") when
+hour, CPU temperature over 90°C for 5 minutes, GPU temperature over 85°C for 5 (the person can change each number or switch a
+rule off in the TV's detail screen; for the two temperature rules the number is the degrees, 50 to 120, and the five minutes are fixed,
+and the temperature numbers on the TV turn red over that number). The face also shows the CPU and GPU temperature ("CPU 46° · GPU 43°") when
 the computer can read them: Linux reads the CPU from the kernel's sensors and an NVIDIA GPU from `nvidia-smi` (Windows too, for the
 GPU only); macOS and a Windows CPU cannot be read without administrator rights, so those show nothing and the temperature rules
 never fire there. Alert events also send one system

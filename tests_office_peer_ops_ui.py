@@ -129,9 +129,9 @@ HOT = "#ff6b86"
 TEMP_WORDS = ["CPU ", "46°", " · ", "GPU ", "43°"]
 
 
-def temp_answer(cpu_t, gpu_t, level="ok", reason=""):
+def temp_answer(cpu_t, gpu_t, level="ok", reason="", cpu_line=90, gpu_line=85):
     a = summ(level, reason)
-    a["face"] = dict(a["face"], cpu_temp=cpu_t, gpu_temp=gpu_t, gpu_util=12.0 if gpu_t is not None else None)
+    a["face"] = dict(a["face"], cpu_temp=cpu_t, gpu_temp=gpu_t, gpu_util=12.0 if gpu_t is not None else None, cpu_temp_line=cpu_line, gpu_temp_line=gpu_line)
     return a
 
 
@@ -282,7 +282,7 @@ def run(browser, base, engine):
     # ── 2c. temperatures on the small TV ──
     print(f"[{engine}] temperatures on the small TV")
     tpage = new_page(browser, errors, answers={"pid-a": temp_answer(46.4, 43.0), "pid-b": temp_answer(93.0, 70.0, "alert", "CPU 溫度 90°C 以上 6 分鐘（現在 93°C）"),
-                                              "pid-c": temp_answer(None, 86.0), "pid-d": temp_answer(52.0, None), "pid-e": temp_answer(None, None)})
+                                              "pid-c": temp_answer(None, 86.0), "pid-d": temp_answer(52.0, None, cpu_line=50), "pid-e": temp_answer(None, None)})
     tfr = open_office(tpage)
     tpage.wait_for_timeout(300)
     for pid in ("pid-a", "pid-b", "pid-c", "pid-d", "pid-e"):
@@ -298,6 +298,7 @@ def run(browser, base, engine):
     check("alert, CPU 93°: the hot number is red, the cool GPU 70° is not", {a: c.lower() == HOT for a, c in tw["pid-b"] if a in ("93°", "70°")} == {"93°": True, "70°": False}, tw["pid-b"])
     check("only a GPU reading (86°, over 85): just the GPU, in red", "GPU " in mark("pid-c") and "86°" in mark("pid-c") and "CPU " not in mark("pid-c")
           and {c.lower() for a, c in tw["pid-c"] if a == "86°"} == {HOT}, tw["pid-c"])
+    check("the lines are the paired computer's rule numbers: CPU 52° over its line of 50 is red", {c.lower() for a, c in tw["pid-d"] if a == "52°"} == {HOT}, tw["pid-d"])
     check("only a CPU reading: just the CPU, no dot", "CPU " in mark("pid-d") and "52°" in mark("pid-d") and "GPU " not in mark("pid-d") and " · " not in mark("pid-d"), mark("pid-d"))
     check("neither reading: no line at all", not any("°" in a or a in ("CPU ", "GPU ") for a in mark("pid-e")), mark("pid-e"))
     goto_room(tpage, tfr, "pid-a")

@@ -15,7 +15,7 @@ summary fields, office_object_view, office_object_live, office_object_action, op
     `mute` {minutes: 60}, the defaults button `reset_rules`; each ends with the office reading the objects again
   - at 1280 three sections to a row, at 900 two columns, nothing spills sideways
   - temperatures: the TV's face has one more line 「CPU 46° · GPU 43°」 (a reading that is missing is left out, neither leaves no line, a number
-    at or over its line, 90 °C for the CPU and 85 °C for the GPU, is in the warning colour), in the 3D and the flat view; the window has a
+    over its line, the rule's number (90 °C for the CPU and 85 °C for the GPU unless changed), is in the warning colour), in the 3D and the flat view; the window has a
     「溫度」 section after network and disk in three shapes (CPU and GPU, CPU only, nothing readable: one line that says why), in both languages
   - English: the window, the button, the tooltip and every string drawn on the TV have no Chinese in them
   - the sidebar's 辦公室 button gets a red dot for `alert` only (not muted, ok, warn, none), from window.__sfOpsLevel and from
@@ -204,10 +204,10 @@ CAPTURE_STYLE = """async () => { const out = [], f = CanvasRenderingContext2D.pr
 HOT = "#ff6b86"
 
 
-def decl_t(level="ok", cpu_t=46.0, gpu_t=43.0, lang="zh", reason="", **over):
+def decl_t(level="ok", cpu_t=46.0, gpu_t=43.0, lang="zh", reason="", cpu_line=90, gpu_line=85, **over):
     d = decl(level, reason, lang, **over)
     if d["face"] is not None:
-        d["face"] = dict(d["face"], cpu_temp=cpu_t, gpu_temp=gpu_t, gpu_util=12.0 if gpu_t is not None else None)
+        d["face"] = dict(d["face"], cpu_temp=cpu_t, gpu_temp=gpu_t, gpu_util=12.0 if gpu_t is not None else None, cpu_temp_line=cpu_line, gpu_temp_line=gpu_line)
     return d
 
 
@@ -358,10 +358,17 @@ def run(browser, base, engine):
     check("…the numbers are bright, not the warning colour", all(c.lower() != HOT for a, c in st if a in ("46°", "43°")), st)
     set_objects(page, [BOOKSHELF, PERSONNEL, decl_t("ok", 93.0, 86.0)], "ok")
     st = fr.evaluate(CAPTURE_STYLE)
-    check("CPU 93° (over 90) and GPU 86° (over 85) are in the warning colour", {a: c.lower() for a, c in st if a in ("93°", "86°")} == {"93°": HOT, "86°": HOT}, st)
+    check("CPU 93° (over 90) and GPU 86° (over 85, the rules' numbers) are in the warning colour", {a: c.lower() for a, c in st if a in ("93°", "86°")} == {"93°": HOT, "86°": HOT}, st)
     set_objects(page, [BOOKSHELF, PERSONNEL, decl_t("ok", 90.0, 84.0)], "ok")
     st = fr.evaluate(CAPTURE_STYLE)
-    check("exactly on the line counts (CPU 90°); under it (GPU 84°) does not", {a: c.lower() == HOT for a, c in st if a in ("90°", "84°")} == {"90°": True, "84°": False}, st)
+    check("exactly on the line (CPU 90°) is not over it, and neither is GPU 84°", {a: c.lower() == HOT for a, c in st if a in ("90°", "84°")} == {"90°": False, "84°": False}, st)
+    set_objects(page, [BOOKSHELF, PERSONNEL, decl_t("ok", 75.0, 90.0, cpu_line=70, gpu_line=95)], "ok")
+    st = fr.evaluate(CAPTURE_STYLE)
+    check("the colour follows the person's numbers: CPU 75 over a line of 70 is red, GPU 90 under a line of 95 is not",
+          {a: c.lower() == HOT for a, c in st if a in ("75°", "90°")} == {"75°": True, "90°": False}, st)
+    set_objects(page, [BOOKSHELF, PERSONNEL, decl_t("ok", 93.0, 86.0, cpu_line=100, gpu_line=100)], "ok")
+    st = fr.evaluate(CAPTURE_STYLE)
+    check("raised to 100: 93° and 86° are no longer red", not any(c.lower() == HOT for a, c in st if a in ("93°", "86°")), st)
     set_objects(page, [BOOKSHELF, PERSONNEL, decl_t("ok", 46.0, None)], "ok")
     texts = [a for a, _ in fr.evaluate(CAPTURE_STYLE)]
     check("only a CPU reading: no GPU, no dot between", "CPU " in texts and "46°" in texts and "GPU " not in texts and " · " not in texts, texts)
@@ -371,6 +378,9 @@ def run(browser, base, engine):
     set_objects(page, [BOOKSHELF, PERSONNEL, decl_t("ok", None, None)], "ok")
     texts = [a for a, _ in fr.evaluate(CAPTURE_STYLE)]
     check("neither (macOS, or an older version): the line is not drawn at all", not any("°" in t_ or t_ in ("CPU ", "GPU ") for t_ in texts), texts)
+    set_objects(page, [BOOKSHELF, PERSONNEL, dict(decl_t("ok", 87.0, 86.0), face=dict(decl("ok")["face"], cpu_temp=87.0, gpu_temp=86.0))], "ok")
+    st = fr.evaluate(CAPTURE_STYLE)
+    check("a face that carries no lines (an older computer): the defaults 90 / 85 apply, CPU 87 is not red, GPU 86 is", {a: c.lower() == HOT for a, c in st if a in ("87°", "86°")} == {"87°": False, "86°": True}, st)
     set_objects(page, [BOOKSHELF, PERSONNEL, decl("ok")], "ok")
     texts = [a for a, _ in fr.evaluate(CAPTURE_STYLE)]
     check("a face with no temperature keys at all (an older computer's) draws no line either", not any("°" in t_ for t_ in texts), texts)

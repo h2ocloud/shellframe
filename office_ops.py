@@ -380,6 +380,7 @@ class Collector:
         with self._lock:
             latest = dict(self.latest)
             updated = self.updated
+            lines = {k: self.engine.cfg[k]["value"] for k in ("cpu_temp_high", "gpu_temp_high")}
             fresh = bool(self.history) and updated is not None and updated - self.history[-1][0] < 60
             spark = [r[2] for r in self.history[-12 if fresh else -11:] if r[2] is not None]
         if latest.get("mem_pct") is not None and not fresh:
@@ -398,7 +399,8 @@ class Collector:
                 "face": {"cpu": latest.get("cpu"), "mem": latest.get("mem_pct"), "pressure": latest.get("pressure"),
                          "net_in": latest.get("net_in"), "net_out": latest.get("net_out"), "online": latest.get("online"),
                          "disk_free_pct": latest.get("disk_free_pct"), "spark": spark[-12:],
-                         "cpu_temp": latest.get("cpu_temp"), "gpu_temp": latest.get("gpu_temp"), "gpu_util": latest.get("gpu_util")}}
+                         "cpu_temp": latest.get("cpu_temp"), "gpu_temp": latest.get("gpu_temp"), "gpu_util": latest.get("gpu_util"),
+                         "cpu_temp_line": lines["cpu_temp_high"], "gpu_temp_line": lines["gpu_temp_high"]}}       # the lines are the rules' numbers now
 
     # ── actions ──
     def act(self, action_id, args, lang) -> dict:
@@ -507,17 +509,16 @@ class Collector:
                           "unit": s["unit"][L], "level": s["level"], "min": s["min"], "max": s["max"], "step": s["step"]})
         return items
 
-    TEMP_LINES = {"cpu": ops_rules.CPU_TEMP_LINE, "gpu": ops_rules.GPU_TEMP_LINE}
+    @staticmethod
+    def _temp_tone(line, v):
+        """bad over the rule's line (the person's number), warn within 10 degrees under it."""
+        return "bad" if v > line else "warn" if v > line - 10 else "ok"
 
-    @classmethod
-    def _temp_tone(cls, which, v):
-        line = cls.TEMP_LINES[which]
-        return "bad" if v >= line else "warn" if v >= line - 10 else "ok"
-
-    def _temp_section(self, latest, recent, now, t):
+    def _temp_section(self, latest, recent, now, t, cfg):
         """CPU temperature (and where it was read), one card per GPU, the last 30 minutes; one line saying why when
         there is nothing to read (macOS, a Windows CPU, a Linux computer with no sensor)."""
         kind = self.sampler.kind
+        cpu_line, gpu_line = cfg["cpu_temp_high"]["value"], cfg["gpu_temp_high"]["value"]
         cpu_t = latest.get("cpu_temp")
         gpus = [g for g in (latest.get("gpus") or []) if isinstance(g, dict)][:4]
         widgets = []
@@ -531,7 +532,7 @@ class Collector:
             return {"id": "temp", "title": t("Temperature", "溫度"), "widgets": widgets}
         if cpu_t is not None:
             widgets.append({"kind": "stat", "label": t("CPU temperature", "CPU 溫度"), "value": f"{cpu_t:.1f}°C",
-                            "sub": latest.get("cpu_temp_src") or "", "tone": self._temp_tone("cpu", cpu_t)})
+                            "sub": latest.get("cpu_temp_src") or "", "tone": self._temp_tone(cpu_line, cpu_t)})
         else:
             widgets.append({"kind": "stat", "label": t("CPU temperature", "CPU 溫度"), "value": "—", "tone": "dim",
                             "sub": t("Needs administrator rights on Windows", "Windows 需要管理員權限") if kind == "win"
@@ -544,7 +545,7 @@ class Collector:
             if power is not None:
                 sub.append(t(f"Power {power:.1f} W", f"功耗 {power:.1f} W"))
             widgets.append({"kind": "stat", "label": name, "value": "—" if temp is None else f"{temp:.0f}°C",
-                            "sub": " · ".join(sub), "tone": "dim" if temp is None else self._temp_tone("gpu", temp)})
+                            "sub": " · ".join(sub), "tone": "dim" if temp is None else self._temp_tone(gpu_line, temp)})
             if util is not None:
                 widgets.append({"kind": "gauge", "label": t("GPU utilization", "GPU 使用率"), "value": util,
                                 "text": f"{util:.0f}%", "tone": "info"})
@@ -614,7 +615,7 @@ class Collector:
                             "sub": fmt_bytes(latest.get("disk_free")),
                             "tone": "bad" if free < line else "warn" if free < line * 1.5 else "ok"})
         sections.append({"id": "net", "title": t("Network and disk", "網路與磁碟"), "widgets": widgets})
-        sections.append(self._temp_section(latest, recent, now, t))
+        sections.append(self._temp_section(latest, recent, now, t, cfg))
         # top five
         by, why = self.top_order(top_sort, latest)
         rows = [[(r["name"] + (f" ×{r['count']}" if r.get("count", 1) > 1 else "")), f"{r['cpu']:.0f}%", fmt_bytes(r["rss"])]

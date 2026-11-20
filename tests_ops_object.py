@@ -364,7 +364,7 @@ c.step()
 s = c.summary("zh")
 check("summary: the contract's keys", {"badge", "hint", "level", "reason", "since", "muted_until", "updated", "face"} <= set(s)
       and s["level"] == "ok" and s["hint"] == "一切正常" and s["badge"] == 0 and s["updated"] == T0, s)
-check("face: the contract's keys", set(s["face"]) == {"cpu", "mem", "pressure", "net_in", "net_out", "online", "disk_free_pct", "spark", "cpu_temp", "gpu_temp", "gpu_util"}
+check("face: the contract's keys", set(s["face"]) == {"cpu", "mem", "pressure", "net_in", "net_out", "online", "disk_free_pct", "spark", "cpu_temp", "gpu_temp", "gpu_util", "cpu_temp_line", "gpu_temp_line"}
       and s["face"]["mem"] == 62.5 and s["face"]["pressure"] == "normal" and s["face"]["spark"] == [62.5], s["face"])
 clean = oo.clean_summary(s)
 check("clean_summary keeps level, reason, since, muted_until, updated and the face", clean["level"] == "ok" and clean["face"] == s["face"]
@@ -532,6 +532,54 @@ check("clean_summary keeps the three; out of range is clamped to -40..150, a str
 check("a point carries both temperatures (the last two fields)", c.history and c.history[-1][9] == 46.0 and c.history[-1][10] == 43.0, c.history[-1:] )
 
 
+
+print("temperature rules: the degrees are the person's number (set_rule, the rules widget, the face, the tones, ops.json)")
+c, clock, *_ = make()
+c.sampler.kind = "linux"
+r = c.act("set_rule", {"id": "gpu_temp_high", "value": 95}, "en")
+check("set_rule changes the degrees; clamped to 50..120", r["ok"] and c.engine.cfg["gpu_temp_high"]["value"] == 95
+      and c.act("set_rule", {"id": "gpu_temp_high", "value": 5}, "en")["ok"] and c.engine.cfg["gpu_temp_high"]["value"] == 50
+      and c.act("set_rule", {"id": "gpu_temp_high", "value": 5000}, "en")["ok"] and c.engine.cfg["gpu_temp_high"]["value"] == 120)
+c.act("set_rule", {"id": "gpu_temp_high", "value": 95}, "en")
+c.act("set_rule", {"id": "cpu_temp_high", "value": 70}, "en")
+items = {i["id"]: i for i in [w_ for w_ in c.view("en")["sections"][-1]["widgets"] if w_["kind"] == "rules"][0]["items"]}
+check("the rules widget: value is degrees, unit °C, 50..120, the labels in both languages", items["gpu_temp_high"]["value"] == 95 and items["gpu_temp_high"]["unit"] == "°C"
+      and (items["gpu_temp_high"]["min"], items["gpu_temp_high"]["max"], items["gpu_temp_high"]["step"]) == (50, 120, 1) and items["cpu_temp_high"]["label"] == "CPU temperature stays over"
+      and [i for i in [w_ for w_ in c.view("zh")["sections"][-1]["widgets"] if w_["kind"] == "rules"][0]["items"] if i["id"] == "cpu_temp_high"][0]["label"] == "CPU 溫度連續 5 分鐘超過")
+c.sampler.values = {"cpu_temp": 75.0, "cpu_temp_src": "acpitz", "temp_supported": True, "gpu_temp": 90.0, "gpu_util": 3.0, "gpus": [dict(GPU1[0], temp=90.0)]}
+c.step()
+fc = c.summary("en")["face"]
+check("the face carries the lines (the numbers set): cpu_temp_line 70, gpu_temp_line 95", (fc["cpu_temp_line"], fc["gpu_temp_line"]) == (70, 95), fc)
+check("…and clean_summary keeps them", oo.clean_summary(c.summary("en"))["face"]["cpu_temp_line"] == 70)
+tw = [x for x in c.view("en")["sections"] if x["id"] == "temp"][0]["widgets"]
+check("detail tones follow the settings: CPU 75 over its 70 is bad; GPU 90 under 95 but within 10 is warn", tw[0]["tone"] == "bad" and tw[1]["tone"] == "warn", (tw[0], tw[1]))
+c.act("set_rule", {"id": "cpu_temp_high", "value": 90}, "en")
+c.act("set_rule", {"id": "gpu_temp_high", "value": 85}, "en")
+tw = [x for x in c.view("en")["sections"] if x["id"] == "temp"][0]["widgets"]
+check("back at 90 / 85: CPU 75 is ok (warn only above 80) and GPU 90 over 85 is bad", tw[0]["tone"] == "ok" and tw[1]["tone"] == "bad", (tw[0], tw[1]))
+c, clock, pushed, sent = make()
+c.sampler.kind = "linux"
+c.act("set_rule", {"id": "cpu_temp_high", "value": 95}, "en")
+for _ in range(8):
+    c.sampler.values = {"cpu_temp": 92.0}
+    c.step()
+    clock.t += 60
+check("with the CPU line at 95, 92 C for eight minutes: no alert", c.state(clock())["level"] == "ok" and not sent)
+c.act("set_rule", {"id": "cpu_temp_high", "value": 90}, "en")
+for _ in range(7):
+    c.sampler.values = {"cpu_temp": 92.0}
+    c.step()
+    clock.t += 60
+check("…at 90 it fires after five minutes over", c.state(clock())["level"] == "alert" and len(sent) == 1 and "over 90°C" in sent[0][1], sent)
+O.state_file().write_text(json.dumps({"v": 1, "rules": {"cpu_temp_high": {"on": True, "value": 7}, "gpu_temp_high": {"on": False, "value": 30}, "cpu_high": {"on": True, "value": 9}}}))
+cm, *_ = make(keep=True)
+check("an ops.json from before (the number was minutes): degrees go back to the defaults, on/off and the other rules are kept",
+      cm.engine.cfg["cpu_temp_high"] == {"on": True, "value": 90} and cm.engine.cfg["gpu_temp_high"] == {"on": False, "value": 85} and cm.engine.cfg["cpu_high"]["value"] == 9, cm.engine.cfg)
+cm.act("set_rule", {"id": "cpu_temp_high", "value": 97}, "en")
+check("saved again as version 2 with the degrees", json.loads(O.state_file().read_text())["v"] == 2 and json.loads(O.state_file().read_text())["rules"]["cpu_temp_high"]["value"] == 97)
+cm2, *_ = make(keep=True)
+check("and read back as 97 degrees (not migrated again)", cm2.engine.cfg["cpu_temp_high"]["value"] == 97)
+
 print("temperatures: a reading that goes away does not stay on the face; a 5-minute reading still draws the 30-minute line")
 c, clock, *_ = make()
 c.sampler.kind = "linux"
@@ -577,12 +625,12 @@ print("the temperature rules, through the collector")
 c, clock, pushed, sent = make()
 c.sampler.kind = "linux"
 for _ in range(8):                                        # 8 minutes at 90 C
-    c.sampler.values = {"cpu_temp": 90.0, "gpu_temp": 70.0}
+    c.sampler.values = {"cpu_temp": 91.0, "gpu_temp": 70.0}
     c.step()
     clock.t += 60
-check("CPU at 90 C for 5 minutes: an alert, notified once, with the degrees in the words",
-      c.state(clock())["level"] == "alert" and c.state(clock())["rule"] == "cpu_temp_high" and len(sent) == 1 and "CPU at 90°C or more" in sent[0][1]
-      and "(90°C now)" in sent[0][1], (c.state(clock()), sent))
+check("CPU over 90 C for 5 minutes: an alert, notified once, with the degrees in the words",
+      c.state(clock())["level"] == "alert" and c.state(clock())["rule"] == "cpu_temp_high" and len(sent) == 1 and "CPU over 90°C for" in sent[0][1]
+      and "(91°C now)" in sent[0][1], (c.state(clock()), sent))
 for _ in range(4):
     c.sampler.values = {"cpu_temp": 60.0}
     c.step()

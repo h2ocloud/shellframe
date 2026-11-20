@@ -210,7 +210,8 @@ def normalize_declaration(raw, lang="en"):
 LEVELS = ("ok", "warn", "alert", "none", "muted")
 PRESSURES = ("normal", "warn", "critical")
 FACE_RANGES = {"cpu": (0, 100), "mem": (0, 100), "disk_free_pct": (0, 100), "net_in": (0, 1e12), "net_out": (0, 1e12),
-               "cpu_temp": (-40, 150), "gpu_temp": (-40, 150), "gpu_util": (0, 100)}
+               "cpu_temp": (-40, 150), "gpu_temp": (-40, 150), "gpu_util": (0, 100),
+               "cpu_temp_line": (-40, 150), "gpu_temp_line": (-40, 150)}
 
 
 def _fnum(v, lo, hi):

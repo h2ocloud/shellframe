@@ -81,15 +81,15 @@
     x.fillStyle = col; x.beginPath(); x.moveTo(cx, cy - s); x.lineTo(cx + s * 1.1, cy + s * .8); x.lineTo(cx - s * 1.1, cy + s * .8); x.closePath(); x.fill();
     x.fillStyle = '#1a0d12'; x.fillRect(cx - s * .1, cy - s * .35, s * .2, s * .6); x.fillRect(cx - s * .1, cy + s * .42, s * .2, s * .2);
   }
-  // The temperatures on the face: "CPU 46° · GPU 43°". A reading that is missing is left out; with neither the line is not drawn. A number at or over its
-  // line (the rule's 90 °C for the CPU, 85 °C for the GPU) is drawn in the warning colour. `align`: 'l' from X, 'r' to X, 'c' around X.
-  const TEMP_LINE = { cpu: 90, gpu: 85 };
+  // The temperatures on the face: "CPU 46° · GPU 43°". A reading that is missing is left out; with neither the line is not drawn. A number over its
+  // line (the rule's number: 90 °C for the CPU and 85 °C for the GPU unless the person changed it) is drawn in the warning colour. `align`: 'l' from X, 'r' to X, 'c' around X.
+  const TEMP_LINE = { cpu: 90, gpu: 85 };                              // the rules' defaults, for a face that does not carry its own lines (an older computer)
   function tempParts(f) {
     const out = [];
     if (!f) return out;
-    const c = num(f.cpu_temp), g = num(f.gpu_temp);
-    if (c != null) out.push({ k: 'CPU', v: Math.round(c) + '°', hot: c >= TEMP_LINE.cpu });
-    if (g != null) out.push({ k: 'GPU', v: Math.round(g) + '°', hot: g >= TEMP_LINE.gpu });
+    const c = num(f.cpu_temp), g = num(f.gpu_temp), cl = num(f.cpu_temp_line) == null ? TEMP_LINE.cpu : f.cpu_temp_line, gl = num(f.gpu_temp_line) == null ? TEMP_LINE.gpu : f.gpu_temp_line;
+    if (c != null) out.push({ k: 'CPU', v: Math.round(c) + '°', hot: c > cl });         // over the line the person set in the rule
+    if (g != null) out.push({ k: 'GPU', v: Math.round(g) + '°', hot: g > gl });
     return out;
   }
   function drawTemps(x, parts, X, Y, px, maxW, align, FONT, dim) {
