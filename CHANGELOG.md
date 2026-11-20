@@ -6,6 +6,32 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.62.1 (2026-11-20)
+
+### Fixes
+
+- **The paired computers' TVs hang above the desk screens.**
+  Reported with a screenshot: in a paired computer's room the small TV hung low, behind the screens on the desks, with
+  the whiteboard's red count over its corner and the rack right against it. It now hangs higher on the back wall, its
+  bottom edge above the desk screens, a little larger, in the first free stretch of wall that clears the door, the
+  whiteboard with its count and the rack. In a three-desk room the whiteboard is a little narrower and the windows give
+  way to it. Covered by `tests_office_peer_ops_ui.py` (three, five and nine desks, 3D and flat).
+
+  **配對電腦房間裡的小電視掛到桌上螢幕上面。** 回報（附截圖）：配對電腦房間的小電視掛得太低，被桌上的螢幕擋住，白板的紅色件數壓在它的角上，
+  右邊又貼著機櫃。現在掛高到後牆上、底邊在桌上螢幕之上，也放大一點，擺在第一段避得開門、白板（含件數）和機櫃的空牆。三張桌子的房間白板
+  稍微變窄，窗戶讓位給它。由 `tests_office_peer_ops_ui.py` 守著（三、五、九張桌子，立體與平面）。
+
+- **A Codex tab with no account picked restarts on the global account.**
+  Reported: restarting a Codex tab whose saved account was blank opened Codex's sign-in screen; the tab had been running
+  on the global account's profile, and the restart did not pass it on. A blank Codex account now means the global one
+  when a tab is restarted or restored. Claude tabs are unchanged: where their conversation lives still decides.
+  The Codex model list also reads the global account's model cache first, so it shows the models that account has.
+  Covered by `tests_codex_profile_fallback.py`.
+
+  **沒有選帳號的 Codex 分頁，重開時用全域帳號。** 回報：存的帳號是空的 Codex 分頁一重開就跳登入畫面；它原本跑的是全域帳號的 profile，重開時
+  沒有帶過去。現在重開或恢復分頁時，Codex 的空帳號就是全域帳號。Claude 分頁不變，仍以對話實際存在哪裡為準。Codex 的模型清單也先讀全域帳號
+  的模型快取，看得到那個帳號有的模型。由 `tests_codex_profile_fallback.py` 守著。
+
 ## v0.62.0 (2026-11-20)
 
 ### Added
