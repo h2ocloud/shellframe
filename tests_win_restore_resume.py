@@ -205,8 +205,12 @@ check("…and the rewrite replaces it, one entry per event, the other hooks kept
       and a5._hooks_installed_in(settings) is True, settings.read_text()[:300])
 main.IS_WIN = False
 api_status._IS_WIN = False
+mac = json.loads(json.dumps(old).replace('python3 \\"C:\\\\app\\\\sf_agent_hook.py\\"', json.dumps(a5._sf_hook_command())[1:-1]))
+settings.write_text(json.dumps(mac), encoding="utf-8")
+check("on a Mac a python3 entry for this program's hook stays installed", a5._hooks_installed_in(settings) is True,
+      settings.read_text()[:200])
 settings.write_text(json.dumps(old), encoding="utf-8")
-check("on a Mac an old entry stays installed", a5._hooks_installed_in(settings) is True)
+check("…one for another copy's hook does not (it is rewritten to this one's)", a5._hooks_installed_in(settings) is False)
 main.IS_WIN = True
 api_status._IS_WIN = True
 

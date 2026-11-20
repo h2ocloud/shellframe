@@ -15,6 +15,7 @@ from pathlib import Path
 
 import agent_status
 import bridge_home
+import sf_config
 import sf_log
 import sf_notify
 import tab_delivery
@@ -173,13 +174,15 @@ class StatusApiMixin:
     # settings.json as its *user* settings; ~/.claude/settings.json reaches it only
     # as project settings when the tab's working directory happens to be ~. So the
     # hooks go into every profile too, or tabs elsewhere never report their state.
-    _CLAUDE_PROFILES_ROOT = Path.home() / ".config" / "shellframe" / "account-profiles" / "claude"
+    # The account manager's folder (sf_config.config_dir(), a folder of its own under a test); a test may set it.
+    _CLAUDE_PROFILES_ROOT = None
 
     def _status_hook_targets(self) -> list:
         """[(label, settings.json path)] every Claude tab may take its hooks from."""
         targets = [("~/.claude", self._CLAUDE_SETTINGS_PATH)]
+        root = self._CLAUDE_PROFILES_ROOT or (sf_config.config_dir() / "account-profiles" / "claude")
         try:
-            for d in sorted(x for x in Path(self._CLAUDE_PROFILES_ROOT).iterdir() if x.is_dir()):
+            for d in sorted(x for x in Path(root).iterdir() if x.is_dir()):
                 targets.append((f"profile {d.name}", d / "settings.json"))
         except OSError:
             pass
@@ -191,11 +194,38 @@ class StatusApiMixin:
         c = str((h or {}).get("command", ""))
         return "sf_agent_hook.py" in c and c.lstrip().startswith("python3 ")
 
+    @staticmethod
+    def _real_user_file(p: Path) -> bool:
+        """Under the account's real home folder's .claude or .config/shellframe. The real home comes from the
+        password database, not $HOME, which tests point elsewhere. Windows has no such lookup: False there."""
+        try:
+            import pwd
+            real = Path(pwd.getpwuid(os.getuid()).pw_dir).resolve()
+        except Exception:
+            return False
+        try:
+            q = Path(p).resolve()
+        except Exception:
+            return False
+        return any(q == b or b in q.parents for b in (real / ".claude", real / ".config" / "shellframe"))
+
+    def _hook_command_for(self, old: str) -> str:
+        """What one of our hook entries should run now: this program's hook, with the stop check kept."""
+        return f"{self._sf_hook_command()} {self._STOP_CHECK}" if self._STOP_CHECK in old else self._sf_hook_command()
+
     def _hooks_installed_in(self, p: Path) -> bool:
         try:
             hooks = (json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}).get("hooks") or {}
         except Exception:
             return False
+        # An entry that runs another copy's hook (a moved install, or a development folder that wrote it) is not
+        # installed: it is rewritten to this program's, which keeps working when that copy is gone.
+        for gs in hooks.values():
+            for g in (gs or []):
+                for h in (g.get("hooks") or []):
+                    c = str((h or {}).get("command", ""))
+                    if "sf_agent_hook.py" in c and c != self._hook_command_for(c):
+                        return False
         if _IS_WIN and any(self._stale_sf_hook(h) for gs in hooks.values() for g in (gs or []) for h in (g.get("hooks") or [])):
             return False            # not installed as far as Windows is concerned: _sync_status_hooks_to_profiles rewrites it
         return (all(any("sf_agent_hook.py" in json.dumps(g) for g in (hooks.get(ev) or []))
@@ -205,7 +235,11 @@ class StatusApiMixin:
     def _write_status_hooks(self, p: Path, enabled: bool) -> str:
         """Install/remove the status hook entries in one settings.json. Merge is
         surgical: only groups whose command references sf_agent_hook.py are
-        touched; every other key and hook survives. Returns an error or ''."""
+        touched; every other key and hook survives. Returns an error or ''.
+        A test never writes the real home's settings (11-19: a test started the status monitor and the
+        start-up sync wrote its own folder's hook path into them)."""
+        if sf_config._running_tests() and self._real_user_file(p):
+            return f"{p}: a test does not write the real settings"
         try:
             cfg = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
         except Exception as e:
@@ -220,6 +254,12 @@ class StatusApiMixin:
                         kept.append(dict(g, hooks=inner) if g.get("hooks") else g)
                 hooks[ev] = kept
         if enabled:
+            for gs in hooks.values():          # another copy's hook path (moved install, development folder) → this one's
+                for g in (gs or []):
+                    for h in (g.get("hooks") or []):
+                        c = str((h or {}).get("command", "")) if isinstance(h, dict) else ""
+                        if "sf_agent_hook.py" in c:
+                            h["command"] = self._hook_command_for(c)
             for ev in self._HOOK_EVENTS:
                 groups = hooks.setdefault(ev, [])
                 if any("sf_agent_hook.py" in json.dumps(g) and self._STOP_CHECK not in json.dumps(g)

@@ -126,6 +126,50 @@ check("off means the start-up sync installs nothing", api._sync_status_hooks_to_
 r = json.loads(api.set_status_hooks_enabled(True))
 check("switching on installs everywhere", r["installed"] is True and r["installed_count"] == 3)
 
+print("another copy's hook path")
+# 11-19: a test run from a development folder started the status monitor; the start-up sync wrote that
+# folder's hook path for the new SessionStart event into the real settings, and the app, which counted any
+# sf_agent_hook.py entry as installed, never put its own back.
+other = 'python3 "/some/old/copy/sf_agent_hook.py"'
+d = load(home)
+d["hooks"]["SessionStart"] = [{"matcher": "", "hooks": [{"type": "command", "command": other, "async": True, "timeout": 10}]}]
+for g in d["hooks"]["Stop"]:
+    for hk in g.get("hooks") or []:
+        if "--stop-check" in hk.get("command", ""):
+            hk["command"] = other + " --stop-check"
+home.write_text(json.dumps(d), encoding="utf-8")
+check("an entry that runs another copy's hook is not installed", not api._hooks_installed_in(home))
+check("start-up sync rewrites it (and only that file changes)", api._sync_status_hooks_to_profiles() == 1)
+cmds = [hk["command"] for gs in load(home)["hooks"].values() for g in gs for hk in (g.get("hooks") or [])
+        if "sf_agent_hook.py" in hk.get("command", "")]
+check("every one of our entries now runs this program's hook", cmds and all(
+    c in (api._sf_hook_command(), api._sf_hook_command() + " --stop-check") for c in cmds), cmds)
+check("…the stop check kept its flag, once", sum("--stop-check" in c for c in cmds) == 1, cmds)
+check("…nothing added twice", len(load(home)["hooks"]["SessionStart"]) == 1)
+check("…the user's own Stop hook is still there", any("say done" in json.dumps(g) for g in load(home)["hooks"]["Stop"]))
+
+print("a test never writes the real home's settings")
+import os  # noqa: E402
+try:
+    import pwd  # noqa: E402
+    real = Path(pwd.getpwuid(os.getuid()).pw_dir)
+except ImportError:
+    real = None
+if real is not None:
+    check("the real ~/.claude/settings.json counts as the real one", api._real_user_file(real / ".claude" / "settings.json"))
+    check("…and a real account profile", api._real_user_file(
+        real / ".config" / "shellframe" / "account-profiles" / "claude" / "x" / "settings.json"))
+check("this test's own copy does not", not api._real_user_file(home))
+guarded = TMP / "guarded" / "settings.json"
+guarded.parent.mkdir()
+guarded.write_text("{}", encoding="utf-8")
+keep = api._real_user_file
+api._real_user_file = lambda p: Path(p) == guarded            # stand-in for the real file: never the real one here
+err = api._write_status_hooks(guarded, True)
+api._real_user_file = keep
+check("writing it during a test is refused and the file is untouched",
+      "test" in err and guarded.read_text(encoding="utf-8") == "{}", err)
+
 print("last activity across a restart")
 
 

@@ -110,6 +110,10 @@ api.sessions = {f"q{i}": Tab(f"q{i}") for i in range(6)}
 api.bridge = api.line_bridge = None
 api._window = type("W", (), {"evaluate_js": lambda self, js: None})()
 api._status_started = False
+# The start-up hook sync writes Claude settings files: this test's own, never the real ones (11-19 it wrote
+# its folder's hook path into the real ~/.claude/settings.json and both account profiles).
+api._CLAUDE_SETTINGS_PATH = TMP / "claude" / "settings.json"
+api._CLAUDE_PROFILES_ROOT = TMP / "profiles"
 api._status_tracker = agent_status.StatusTracker()
 api._hook_events, api._status_cache, api._blocked_cache = {}, {}, {}
 api._connect_tick = lambda now: None
