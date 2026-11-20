@@ -24,6 +24,10 @@ trap 'rm -rf "$SHELLFRAME_TEST_ROOT"' EXIT
 
 PY=".venv/bin/python"
 [ -x "$PY" ] || PY="python3"
+# The real Claude settings and office preferences must come out of the run as they went in
+# (scripts/user_files_guard.py: ShellBot's hook entries, and no demo data in the office preferences).
+GUARD_SNAP="$SHELLFRAME_TEST_ROOT/user-files.json"
+python3 scripts/user_files_guard.py snapshot "$GUARD_SNAP" 2>/dev/null || true
 fails=0
 skips=0
 flaky=0
@@ -94,6 +98,10 @@ else
   failed_names="$failed_names tests_*.js(no-node)"
 fi
 
+if ! python3 scripts/user_files_guard.py check "$GUARD_SNAP"; then
+  fails=$((fails + 1))
+  failed_names="$failed_names user-files-guard"
+fi
 echo
 if [ "$total" -eq 0 ]; then
   echo "沒有收集到任何測試 — 當成失敗（glob 或工作目錄不對）"
