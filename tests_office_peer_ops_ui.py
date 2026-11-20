@@ -8,8 +8,9 @@ stand-in Python side (ops_peer / ops_peer_view / ops_peer_live answer like api_o
     off / older / out of reach / no data are grey (no red, yellow or green) and say why in words: 「那台沒打開維運戰情」
     「那台版本較舊」「連不上」「還沒有資料」; a computer that has not answered yet says 「讀取中…」
   - a blip keeps the last good face (150 s), a lasting failure turns it grey
-  - the place: right of the whiteboard, left of the rack, above the door's top, inside the wall; it overlaps neither the whiteboard,
-    the rack, the door nor a desk on screen (3D and flat), in a three-seat room and a wider five-seat one
+  - the place: hung above the desks' monitors (its frame's bottom above where a monitor's top lands on the wall, its top inside the
+    wall), right of the whiteboard and its red count badge, left of the rack; it overlaps none of the whiteboard (with the badge), the
+    rack, the door, a window, a desk or a monitor on screen (3D and flat) in a three-seat, a five-seat and a nine-seat (two-row-plus) room
   - hovering it: the pointer and the tooltip 「維運戰情 · <name>」; a click opens the same window titled 「維運戰情 · <name>」, read through
     ops_peer_view, kept live with ops_peer_live (on, a heartbeat, off at Esc / ✕ / a click outside / another window), and never
     through this computer's own office_object_view / office_object_live
@@ -72,7 +73,7 @@ def peer(name, n=1):
 
 PIDS = ["pid-a", "pid-b", "pid-c", "pid-d", "pid-e", "pid-f"]
 PEERS = {"peers": {"pid-a": peer("示範電腦甲", 3), "pid-b": peer("示範電腦乙", 5), "pid-c": peer("示範電腦丙"),
-                   "pid-d": peer("示範電腦丁"), "pid-e": peer("示範電腦戊"), "pid-f": peer("示範電腦己")}}
+                   "pid-d": peer("示範電腦丁"), "pid-e": peer("示範電腦戊"), "pid-f": peer("示範電腦己", 9)}}
 FACE = {"cpu": 23.5, "mem": 61.0, "pressure": "normal", "net_in": 1200000, "net_out": 30000, "online": True, "disk_free_pct": 42.3, "spark": [55, 57, 60, 61]}
 
 
@@ -294,8 +295,20 @@ def run(browser, base, engine):
     fr.evaluate("__office.setMode('iso', true)")
 
     # ── 3. the place ──
-    print(f"[{engine}] the place: clear of the whiteboard, the rack, the door and the desks")
-    for pid, label in (("pid-a", "three seats"), ("pid-b", "five seats")):
+    print(f"[{engine}] the place: above the monitors, clear of the whiteboard (and its badge), the rack, the door, the windows and the desks")
+    SCENE = """({ p, n, iso }) => { const g = __office.peerWall(p), r = g.room, P = (x, y, z) => __office.proj(x, y, z), box = f => { const pts = []; for (const x of [f.x0, f.x1]) for (const y of [f.y0, f.y1]) for (const z of [f.z0, f.z1]) pts.push(P(x, y, z)); return pts; };
+      const unit = Math.hypot(P(0, 0, 1).x - P(0, 0, 0).x, P(0, 0, 1).y - P(0, 0, 0).y) / (iso ? 1 : .5);     // the camera zoom: the page draws its badges 7.4 px in the world
+      const wallQ = (q, dx, dz) => [[q[0] - dx, q[6] - dz], [q[2] + dx, q[6] - dz], [q[2] + dx, q[7] + dz], [q[0] - dx, q[7] + dz]].map(([x, z]) => P(x, r.y, z));
+      const circle = (cx, cz, rad) => { const c = P(cx, r.y, cz); return [...Array(16).keys()].map(i => ({ x: c.x + rad * Math.cos(i * Math.PI / 8), y: c.y + rad * Math.sin(i * Math.PI / 8) })); };
+      const seats = [...Array(n).keys()].flatMap(i => { const big = i === 0, lx = .9 + (i % 4) * 2.5, ly = .6 + Math.floor(i / 4) * 2.4, dh = big ? 22 : 20, mw = big ? 1.1 : .78, mx = r.x + lx + .75 - mw / 2;     // a desk and its monitor, as office.html draws them
+        return [{ k: 'desk', x0: r.x + lx, x1: r.x + lx + 1.5, y0: r.y + ly, y1: r.y + ly + .8, z0: 0, z1: dh }, { k: 'mon', x0: mx, x1: mx + mw, y0: r.y + ly + .13, y1: r.y + ly + .21, z0: dh + 5, z1: dh + 23 }]; });
+      return { tv: __office.peerTvScreen(p), tvFrame: wallQ(g.tv, .07, 1.6), badge: circle(g.tv[2], g.tv[7] + 2, 7.4 * unit),
+        rack: box({ x0: g.rack[0].x, x1: g.rack[0].x + g.rack[0].w, y0: g.rack[0].y, y1: g.rack[0].y + g.rack[0].h, z0: 0, z1: 50 }),
+        door: box({ x0: r.x + 1.2, x1: r.x + 2.3, y0: r.y, y1: r.y + .2, z0: 0, z1: r.wallH - 14 }),
+        board: wallQ(g.board, 0, 0), boardBadge: circle(g.board[2], g.board[7] - 1, 7.4 * unit),
+        wins: __office.peerWindows(p).map(([a, b]) => [[a, 14.4], [b, 14.4], [b, 32.8], [a, 32.8]].map(([x, z]) => P(x, r.y, z))),
+        seats: seats.map(s => ({ k: s.k, pts: box(s) })) }; }"""
+    for pid, label, n in (("pid-a", "three seats", 3), ("pid-b", "five seats", 5), ("pid-f", "nine seats", 9)):
         for mode in ("iso", "flat"):
             fr.evaluate("(m) => __office.setMode(m, true)", mode)
             goto_room(page, fr, pid)
@@ -303,22 +316,22 @@ def run(browser, base, engine):
             r, tv, bd = g["room"], g["tv"], g["board"]
             rack = g["rack"][0]
             if mode == "iso":
-                check(f"{label}: right of the whiteboard, left of the rack (>= 0.3), right of the door, inside the wall",
-                      tv[0] >= bd[2] and tv[2] <= rack["x"] - .3 + 1e-9 and tv[0] >= r["x"] + 2.3 + .2 and tv[2] <= r["x"] + r["w"] and 0 <= tv[6] < tv[7] <= r["wallH"], (tv, bd, rack, r))
-            sc = fr.evaluate("""(p) => { const g = __office.peerWall(p), box = f => { const pts = []; for (const x of [f.x0, f.x1]) for (const y of [f.y0, f.y1]) for (const z of [f.z0, f.z1]) pts.push(__office.proj(x, y, z)); return pts; };
-                const r = g.room, seats = [...Array(12).keys()].flatMap(i => { const lx = .9 + (i % 4) * 2.5, ly = .6 + Math.floor(i / 4) * 2.4, mx = r.x + lx + .75 - .39;     // a desk (its top at 20) and its monitor (.78 wide, 25–43), as office.html draws them
-                  return [{ x0: r.x + lx, x1: r.x + lx + 1.5, y0: r.y + ly, y1: r.y + ly + .8, z0: 0, z1: 20 }, { x0: mx, x1: mx + .78, y0: r.y + ly + .13, y1: r.y + ly + .21, z0: 25, z1: 43 }]; });
-                return { tv: __office.peerTvScreen(p), board: __office.wallPoint('board:' + p) && null,
-                  rack: box({ x0: g.rack[0].x, x1: g.rack[0].x + g.rack[0].w, y0: g.rack[0].y, y1: g.rack[0].y + g.rack[0].h, z0: 0, z1: 50 }),
-                  door: box({ x0: r.x + 1.2, x1: r.x + 2.3, y0: r.y, y1: r.y + .2, z0: 0, z1: r.wallH - 14 }),
-                  boardQuad: [[g.board[0], g.board[6]], [g.board[2], g.board[6]], [g.board[2], g.board[7]], [g.board[0], g.board[7]]].map(([x, z]) => __office.proj(x, r.y, z)),
-                  seats: seats.slice(0, 2 * (p === 'pid-b' ? 5 : 3)).map(box) }; }""", pid)
-            tvh = hull(sc["tv"])
-            bad = {"board": convex_overlap(tvh, hull(sc["boardQuad"])), "rack": convex_overlap(tvh, hull(sc["rack"])), "door": convex_overlap(tvh, hull(sc["door"]))}
+                check(f"{label}: right of the whiteboard's badge (>= 0.35), left of the rack's covered stretch, right of the door, inside the wall",
+                      tv[0] >= bd[2] + .35 - 1e-9 and tv[2] <= r["x"] + r["w"] - 1.7 + 1e-9 and tv[0] >= r["x"] + 2.3 + .1 and 0 <= tv[6] < tv[7] <= r["wallH"], (tv, bd, rack, r))
+                check(f"{label}: hung above the monitors (frame bottom z >= 22.5, frame top <= the wall's height; a monitor's top lands at z 19.6–21.6 on the wall)",
+                      tv[6] - 1.6 >= 22.5 and tv[7] + 1.6 <= r["wallH"] + .2, tv)
+            sc = fr.evaluate(SCENE, {"p": pid, "n": n, "iso": mode == "iso"})
+            tvh = hull(sc["tv"] + sc["tvFrame"] + sc["badge"])
+            bad = {"board": convex_overlap(tvh, hull(sc["board"] + sc["boardBadge"])), "rack": convex_overlap(tvh, hull(sc["rack"])), "door": convex_overlap(tvh, hull(sc["door"]))}
+            for i, w in enumerate(sc["wins"]):
+                bad[f"window{i}"] = convex_overlap(tvh, hull(w))
             for i, s in enumerate(sc["seats"]):
-                bad[f"seat{i}"] = convex_overlap(tvh, hull(s))
-            bad = {k: round(v, 2) for k, v in bad.items() if v > 1.0}
-            check(f"{label}, {mode}: on screen the TV overlaps neither the whiteboard, the rack, the door, a desk nor a monitor (> 1 px)", not bad, bad)
+                bad[f"{s['k']}{i // 2}"] = convex_overlap(tvh, hull(s["pts"]))
+            bad = {k: round(v, 2) for k, v in bad.items() if v > .5}
+            check(f"{label}, {mode}: on screen the TV (frame and alert badge too) overlaps none of the whiteboard and its badge, the rack, the door, a window, a desk or a monitor (> 0.5 px)", not bad, bad)
+            above = [i // 2 for i, s in enumerate(sc["seats"]) if s["k"] == "mon" and min(p["x"] for p in s["pts"]) < max(p["x"] for p in sc["tv"]) and max(p["x"] for p in s["pts"]) > min(p["x"] for p in sc["tv"])
+                     and sum(p["y"] for p in sc["tv"]) / 4 >= sum(p["y"] for p in s["pts"]) / len(s["pts"])]
+            check(f"{label}, {mode}: every monitor beside it on screen sits below it (the TV is above the monitors' tops)", not above, above)
     fr.evaluate("__office.setMode('iso', true)")
     goto_room(page, fr, "pid-a")
 
@@ -418,7 +431,7 @@ def run(browser, base, engine):
     a1 = rel("pid-b")
     check("the room moved, and the TV is at the same place in it (same offset from the room's corner)", (a1["x"], a1["y"]) != (a0["x"], a0["y"]) and a1["dx"] == a0["dx"] and a1["dy"] == a0["dy"], (a0, a1))
     others = {p: rel(p) for p in PIDS if p != "pid-b"}
-    check("…every other room's TV is also right of its board's end by the same gap", all(abs(v["dx"] - (2.75 + min(3.6, max(2.6, v["w"] - 5.45)) + .1)) < 1e-6 and v["dy"] == 0 for v in others.values()), others)
+    check("…every other room's TV is also right of its board's end by the same gap", all(abs(v["dx"] - (2.75 + min(3.6, max(2.6, v["w"] - 6.2)) + .35)) < 1e-6 and v["dy"] == 0 for v in others.values()), others)
     page.keyboard.press("Escape")
     page.wait_for_timeout(300)
 

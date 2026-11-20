@@ -1257,7 +1257,7 @@ function drawRoomShell(x, r, far) {
     poly(x, wq(r.x, r.y, r.x + r.w, r.y, 0, 1, Hh - 8, Hh - 4), alpha(teamCol(r.team), .55));   // 團隊色帶
     if (r.h > 4) wallFace(x, r.x, r.y, r.x, r.y + r.h, Hh, 2, null, teamCol(r.team));
   } else { const pe = M.peers.get(r.peerId), hasB = !!(pe && pe.boardState);
-    wallFace(x, r.x, r.y, r.x + r.w, r.y, Hh, 3, i => i === 0 || (hasB && i === 1), COL.teal);                    // 有白板的房間：中間那扇窗讓給白板
+    wallFace(x, r.x, r.y, r.x + r.w, r.y, Hh, 3, i => !peerWindowShown(r, pe, i), COL.teal);                       // 有白板的房間：中間那扇窗讓給白板；擋到小電視的窗也讓
     if (hasB) drawPeerBoard(x, r, pe);
     if (pe) drawPeerTV(x, r, pe); }
 }
@@ -2130,15 +2130,32 @@ function setLoops(list) {
 }
 // 畫與點用同一個四邊形（螢幕座標）
 // 牆上的東西：大廳的 'board'、'cal'（固定在 WALL_OBJ），和每台有白板的隔壁電腦後牆上的 'board:<電腦 id>'（跟著那間房，房間移動時一起動）
-const peerBoardQ = r => { const x0 = r.x + 2.75; return [x0, r.y, x0 + clamp(r.w - 5.45, 2.6, 3.6), r.y, 0, 1, 16, 38]; };   // 隔壁電腦的白板：門（1.2～2.3）和機櫃之間；窗讓出來（drawRoomShell）
+const peerBoardQ = r => { const x0 = r.x + 2.75; return [x0, r.y, x0 + clamp(r.w - 6.2, 2.6, 3.6), r.y, 0, 1, 16, 38]; };   // 隔壁電腦的白板：門（1.2～2.3）和機櫃之間（留一段給小電視：三位的房間寬 9.3，白板 3.1）；窗讓出來（drawRoomShell）
+// 隔壁電腦後牆上的小電視：高度固定（z 24.5–38.5：框的底邊在桌上螢幕頂端之上，框的頂邊不超過牆高 40）。左右由程式找：把「放不下」的段擋掉
+// （門和它左邊 0～2.45、白板加它右上角的紅色件數角標到白板右緣 +.35、機櫃擋住牆的那一段 r.w - 1.7 起），剩下的空段由左往右挑第一個放得下的，
+// 先試寬 1.4、再 1.1（太寬小電視的臉會變成扁的橫排，沒有磁碟那行）；都放不下就沒有小電視。窗（含小電視的紅色驚嘆號角標）擋到的那扇讓給它。
+const PEER_TV_Z = [24.5, 38.5], PEER_TV_W = [1.4, 1.1];
+function peerTvQ(r) {
+  const bd = peerBoardQ(r), blocks = [[0, 2.45], [2.6, bd[2] - r.x + .35], [r.w - 1.7, r.w]];
+  for (const W of PEER_TV_W) {
+    let from = 0;
+    for (const [a, b] of blocks) { if (a - from >= W - 1e-6) return [r.x + from, r.y, r.x + from + W, r.y, 0, 1, PEER_TV_Z[0], PEER_TV_Z[1]]; from = Math.max(from, b); }
+    if (r.w - from >= W - 1e-6) return [r.x + from, r.y, r.x + from + W, r.y, 0, 1, PEER_TV_Z[0], PEER_TV_Z[1]];
+  }
+  return null;
+}
+function peerWindowShown(r, pe, i) {            // 隔壁電腦後牆三扇窗（wallFace 的 u 範圍）：左邊那扇在門上，有白板時中間那扇讓給白板，擋到小電視的讓給小電視
+  if (i === 0 || (pe && pe.boardState && i === 1)) return false;
+  const t = pe && wallObj('tv:' + pe.id), q = t && t.q;
+  return !(q && (i + .14) / 3 * r.w + r.x < q[2] + .35 && (i + .86) / 3 * r.w + r.x > q[0] - .1);
+}
 function wallObj(k) {
   if (String(k).startsWith('obj:')) return OBJ.wall(k);
   if (WALL_OBJ[k]) return k === 'tv' && !OPS.active() ? null : WALL_OBJ[k];   // the TV is only there while the ops object is
   const mt = /^tv:(.+)$/.exec(String(k));
-  if (mt) {                                                                                  // 隔壁電腦後牆上的小電視（維運戰情）：白板右邊、機櫃左邊；本機的維運開著才有
-    const pe = M.peers.get(mt[1]), r = pe && OPS.active() ? M.rooms.get('peer:' + pe.id) : null; if (!r) return null;
-    const x0 = peerBoardQ(r)[2] + .1;                                                       // 白板之後、機櫃（r.w - .75，3D 裡它擋得到右邊的牆）之前；1.05 寬、z 18–36：不壓到白板、機櫃、門和桌上的螢幕（測試量過）
-    return { name: tr('Ops board · ', '維運戰情 · ') + pe.name, q: [x0, r.y, x0 + 1.05, r.y, 0, 1, 18, 36], room: r.id };
+  if (mt) {                                                                                  // 隔壁電腦後牆上的小電視（維運戰情）：位置見 peerTvQ；本機的維運開著才有
+    const pe = M.peers.get(mt[1]), r = pe && OPS.active() ? M.rooms.get('peer:' + pe.id) : null, q = r && peerTvQ(r); if (!q) return null;
+    return { name: tr('Ops board · ', '維運戰情 · ') + pe.name, q, room: r.id };
   }
   const m = /^board:(.+)$/.exec(String(k)), pe = m && M.peers.get(m[1]), r = pe && pe.boardState ? M.rooms.get('peer:' + pe.id) : null;
   if (!r) return null;
@@ -3707,6 +3724,7 @@ window.__office = {
   camTo: key => { const e = M.ents.get(key), p = e && deskTopOf(e); if (!p) return false; const q = P(p.x, p.y, p.z); goal = null; followCam = false; Object.assign(cam, { x: q.x, y: q.y, z: 1.5 }); kick(); return true; },
   pileAt: key => { const p = PILES.get(key); return p ? { x: p.x, y: p.y, r: p.r } : null; }, piles: () => [...PILES.keys()], pileTip: () => (hoverPile ? pileName(hoverPile) : ''),
   peerWall: pid => { const r = M.rooms.get('peer:' + pid), t = wallObj('tv:' + pid); return r ? { room: { x: r.x, y: r.y, w: r.w, h: r.h, wallH: r.wallH }, board: peerBoardQ(r), tv: t ? t.q : null, rack: decorOf(r).filter(d => d.kind === 'rack') } : null; },
+  peerWindows: pid => { const r = M.rooms.get('peer:' + pid), pe = M.peers.get(pid); return r ? [0, 1, 2].filter(i => peerWindowShown(r, pe, i)).map(i => [r.x + (i + .14) / 3 * r.w, r.x + (i + .86) / 3 * r.w]) : []; },
   peerTvScreen: pid => (wallObj('tv:' + pid) ? wallScreen('tv:' + pid) : null),
   proj: (x, y, z) => t2s(x, y, z), ops: () => OPS, opsSet: o => { OPS.setObject(o); kick(); }, opsTv: () => (wallObj('tv') ? wallScreen('tv') : null),
   wallQuads: () => Object.fromEntries(wallKeys().filter(key => wallRoom(key) === 'lobby' && wallObj(key)).map(key => [key, wallScreen(key)])),
