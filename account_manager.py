@@ -28,12 +28,19 @@ def _empty_accounts():
             "sessions": {}}
 
 
+# Providers whose blank ref means "the global account": a Codex tab started with no ref used the global
+# profile's CODEX_HOME. Not Claude: its home is told from where the conversation lives
+# (main._actual_claude_home), and a guessed CLAUDE_CONFIG_DIR would make --resume miss the conversation.
+FALLBACK_PROVIDERS = ("codex",)
+
+
 def refs_with_global_fallback(cfg: dict, refs: dict | None = None):
-    """Fill blank provider refs from ``accounts.global`` for a relaunch."""
+    """Fill blank refs of FALLBACK_PROVIDERS from ``accounts.global`` for a relaunch; the others as they are."""
     accounts = cfg.get("accounts") or _empty_accounts()
     global_refs = accounts.get("global") or {}
     current = refs or {}
-    return {provider: current.get(provider) or global_refs.get(provider)
+    return {provider: (current.get(provider) or global_refs.get(provider)) if provider in FALLBACK_PROVIDERS
+            else current.get(provider)
             for provider in PROVIDERS}
 
 

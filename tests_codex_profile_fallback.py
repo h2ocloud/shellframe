@@ -61,6 +61,11 @@ cfg = config()
 resolved = main.ACCOUNT_MANAGER.refs_with_global_fallback(cfg, {"codex": None, "claude": None})
 env = main.Session._account_env_overrides(SimpleNamespace(account_refs=resolved))
 check("null ref uses the global Codex profile", env.get("CODEX_HOME") == str(global_dir), env)
+cfg_claude = dict(cfg, accounts=dict(cfg.get("accounts") or {}, global_=None))
+cfg_claude["accounts"]["global"] = dict((cfg.get("accounts") or {}).get("global") or {}, claude="claude-global-ref")
+both = main.ACCOUNT_MANAGER.refs_with_global_fallback(cfg_claude, {"codex": None, "claude": None})
+check("…but a blank Claude ref stays blank (its home comes from where the conversation lives, not settings)",
+      both.get("claude") is None and both.get("codex"), both)
 
 captured = {}
 real_session_class = main.Session

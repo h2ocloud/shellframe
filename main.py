@@ -3071,11 +3071,11 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 cmd = _canonical_cmd(info["cmd"] or entry.get("cmd") or "bash")
                 account_refs = dict(entry.get("account_refs") or {})
                 for provider in account_manager.PROVIDERS:
-                    account_refs[provider] = (
-                        account_refs.get(provider)
-                        or _tmux_get_env(tmux_name, f"SF_ACCOUNT_{provider.upper()}")
-                        or default_account_refs.get(provider)
-                    )
+                    found = _tmux_get_env(tmux_name, f"SF_ACCOUNT_{provider.upper()}") or default_account_refs.get(provider)
+                    if provider in account_manager.FALLBACK_PROVIDERS:   # a blank Codex ref is the global account
+                        account_refs[provider] = account_refs.get(provider) or found
+                    else:                                                 # Claude: a blank ref stays blank
+                        account_refs.setdefault(provider, found)
                 if sid in self.sessions:
                     continue  # already attached
                 self._counter = max(self._counter, int(sid[1:]) if sid[1:].isdigit() else 0)
