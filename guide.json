@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "reviewed_for": "0.60",
+  "reviewed_for": "0.61",
   "tours": {
     "first_run": [
       "new-tab",
@@ -339,6 +339,22 @@
       "body": {
         "en": "In the office, the bookshelf on the lobby wall (or the 書櫃 button at the bottom right) shows each bot's memory, skills and session summaries, and the shared skills. Read only; the red number is bots whose memory is almost full.",
         "zh": "辦公室大廳牆邊的書櫃（或右下角的「書櫃」鈕）收著每個 bot 的記憶、技能、對話摘要，和共用技能。只看不改；紅色數字是記憶快滿的 bot 數。"
+      }
+    },
+    {
+      "id": "office-arrange",
+      "surfaces": [
+        "desktop"
+      ],
+      "since": "0.61.0",
+      "flag": "experimental_office",
+      "title": {
+        "en": "Arrange positions",
+        "zh": "整理位置"
+      },
+      "body": {
+        "en": "In the office, the Arrange button at the bottom right lets you drag each paired computer's room onto a dashed cell around this computer. Done saves it; Reset goes back to the column. This computer stays in the center.",
+        "zh": "辦公室右下角的「整理位置」，讓你把每台配對電腦的房間拖到這台電腦四周的虛線格。按「完成」存起來，「還原預設」回到直排。這台電腦固定在正中。"
       }
     },
     {
