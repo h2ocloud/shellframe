@@ -6,6 +6,63 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.62.0 (2026-11-20)
+
+### Added
+
+- **Arrange the paired computers' rooms in the office.**
+  Reported: with several paired computers, their rooms ran in one long row toward a corner, in the order they were paired.
+  Arrange (bottom right of the office) steps the view back and draws dashed slots around this computer's building:
+  drag a room by its handle onto a slot (it snaps; a guide line helps line it up), then Done saves it, Cancel or Esc
+  leaves it as it was, and Restore default goes back to the row. Tab picks a room, the arrow keys move it one slot and
+  Enter drops it. This computer's building stays in the middle and cannot be dragged, and avatars cannot be dragged
+  while arranging. The arrangement is kept on this computer (the office preferences' `arrange`), is the same in the 3D
+  and flat views, and a computer paired later takes the next free slot. Without it the office looks as before. Covered
+  by `tests_office_arrange_ui.py`.
+
+  **在辦公室裡排配對電腦的房間。** 回報：配對的電腦一多，它們的房間照配對先後一間接一間往角落排成一長條。辦公室右下角按「整理位置」，
+  畫面退後一圈，這台電腦的大樓四周出現虛線格：抓房間頂上的把手拖到格子上（會吸附，有對齊線），按「完成」存起來，「取消」或 Esc 不改，
+  「還原預設」回到原本的直排。也可以用鍵盤：Tab 選房間、方向鍵移一格、Enter 放下。這台電腦的大樓固定在中間不能拖，整理時頭像也不能拖。
+  排法存在這台電腦（辦公室偏好的 `arrange`），立體和平面共用；之後新配對的電腦放到下一個空格。沒排過的辦公室和以前一樣。由
+  `tests_office_arrange_ui.py` 守著。
+
+- **The ops board shows the paired computers too.**
+  Each paired computer's room has a small TV on its back wall with that computer's level and its CPU, memory, network
+  and disk; clicking it opens that computer's detail window (its rules are shown, not changed: change them on that
+  computer). The office asks each one once a minute while it is open, and every 2 seconds while its window is open. A
+  computer whose ops board is off, that is on an older version, that cannot be reached, or that is not shared with this
+  one shows a grey TV saying so. It goes over the pairing's signed link (`/link/ops`, `/link/ops/view`,
+  `/link/ops/live`, read-only). Covered by `tests_link_ops.py` and `tests_office_peer_ops_ui.py`.
+
+  **維運戰情也看得到配對的電腦。** 每台配對電腦的房間後牆多一台小電視，顯示那台的等級和 CPU、記憶體、網路、磁碟；點下去打開那台的詳細
+  畫面（規則只能看，要改請到那台電腦）。辦公室開著時每分鐘問每台一次，那台的詳細畫面開著時每 2 秒一次。那台沒打開維運戰情、版本較舊、
+  連不上、或沒有開放給這台看時，電視是灰的並寫出原因。走配對連線的簽章請求（`/link/ops`、`/link/ops/view`、`/link/ops/live`，唯讀）。由
+  `tests_link_ops.py`、`tests_office_peer_ops_ui.py` 守著。
+
+- **The ops board reads Windows.** CPU per core, memory, the page file as swap, network speed, the free disk and the
+  top five programs, through the system's own interfaces (no new package). Windows has no memory-pressure level, so it
+  is estimated from the free memory (under 10% a warning, under 5% high). Covered by `tests_ops_sampler_win.py`, which
+  checks the layout of the system structures on every platform and reads the real values on Windows.
+
+  **維運戰情支援 Windows。** 每顆核心的 CPU、記憶體、分頁檔（當成交換區）、網路速度、磁碟剩餘和前 5 名程式，都用系統本身的介面讀，
+  不裝新套件。Windows 沒有記憶體壓力等級，改用可用記憶體推算（不到 10% 算警告、不到 5% 算高）。由 `tests_ops_sampler_win.py` 守著：
+  每個平台都檢查系統結構的大小與欄位位置，在 Windows 上讀真的數值。
+
+### Changes
+
+- **Room signs keep clear of the furniture.**
+  Reported with a screenshot: with a paired computer's room arranged behind the lobby, its sign lay over the lobby's
+  whiteboard and calendar. Every room's sign now keeps clear of any room's whiteboard, calendar, TV, bookshelf and
+  cabinet, and of the other signs: it moves a little left, right or up, and if nothing fits it shrinks to a dot and a
+  short name. A paired computer's sign shows its name only; "paired · primary: …" and the lobby's "secretary · interns"
+  appear when the pointer is on the sign. With the pointer on a piece of furniture, the signs and name tags over it fade.
+  Covered by `tests_office_labels_ui.py`.
+
+  **房間名牌不擋家具。** 回報（附截圖）：配對電腦的房間排到大廳後面時，它的名牌蓋在大廳的白板和行事曆上。現在每個名牌都會避開任何一間房的
+  白板、行事曆、電視、書櫃、檔案櫃，也避開其他名牌：往左、往右或往上挪一點，都擺不下就縮成一個圓點加短名。配對電腦的名牌只顯示名字，
+  「配對・主要：…」和大廳的「秘書長・實習生」要滑鼠移到名牌上才出現。滑鼠移到家具上時，蓋在上面的名牌和人名標籤會變淡。由
+  `tests_office_labels_ui.py` 守著。
+
 ## v0.61.1 (2026-11-20)
 
 ### Changes

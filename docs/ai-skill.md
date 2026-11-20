@@ -20,8 +20,8 @@ sfctl version
 ```
 
 ```
-OK ShellBot v0.61.1
-   version: 0.61.1
+OK ShellBot v0.62.0
+   version: 0.62.0
    experimental: {"experimental_a2a": true, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false, "experimental_office": false}
 ```
 
@@ -723,6 +723,7 @@ sfctl deliver show N
 | `sfctl tg-push --preview` (links get no preview card otherwise). No other new commands: Bots, 辦公室 and 看板 sit in a row at the top of the sidebar; 「待你決定」 on the right lists tabs waiting on a menu and decision cards; Settings → Office has 不分享任務給隔壁電腦 (`settings.link_share_tasks_off`: a paired computer's GET /link/tasks gets 403); `bots_open` on a bot whose tab has died opens a new tab instead of answering "already awake" | 0.59.0 |
 | `sfctl deliver add <path-or-url> --title … [--note …] [--task N]` / `list` / `show N` (§4.11): files and links handed to the person, kept as references on the bot's or tab's desk in the office; the 「交付物」 button, a section of 「待你決定」 and a paperclip in the sidebar; a bot's system prompt says to register what it hands over; the person's 請他改 reaches the bot as 「（交付物）請改…」 | 0.60.0 |
 | No new commands: the office's ops TV (`experimental_ops`, off by default, §4.10): this computer's CPU, memory, network and disk on the lobby wall, red on a lasting problem, one system notification per alert, rules in `ops.json`; the page's `office_object_view` / `office_object_live` / `ops_state` | 0.61.0 |
+| No new commands: the office's 整理位置 (arrange the paired computers' rooms around this one, kept in the office preferences' `arrange`); the ops board on paired computers (a small TV in each paired room, its detail window read-only, over the signed `/link/ops`, `/link/ops/view`, `/link/ops/live`); ops sampling on Windows; room signs keep clear of the furniture | 0.62.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to
