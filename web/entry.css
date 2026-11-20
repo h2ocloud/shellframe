@@ -24,6 +24,8 @@
   background: #f7768e; color: #1a1b26; font-size: 9px; font-weight: 700; line-height: 14px; text-align: center; pointer-events: none;
 }
 #sb-entry .sfe-btn .sfb-badge[hidden] { display: none; }
+/* the ops board's alert (web/ops_state.js): a dot on the 辦公室 button, out of the flow */
+.sfe-btn .sfe-opsdot { position: absolute; top: -4px; left: -3px; width: 9px; height: 9px; box-sizing: border-box; border-radius: 50%; background: #f7768e; border: 1.5px solid #1a1b26; pointer-events: none; }
 /* every label fits: words beside the icons, the count inline */
 #sb-entry.sfe-words .sfe-btn, #sb-entry.sfe-text .sfe-btn { flex: 1 1 auto; min-width: auto; padding: 0 4px; }
 #sb-entry.sfe-words .sfe-btn .sfe-label, #sb-entry.sfe-text .sfe-btn .sfe-label { display: inline; }
